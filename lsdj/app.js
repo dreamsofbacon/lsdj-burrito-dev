@@ -1294,6 +1294,8 @@ setCrateHooks({
     }
     unwatch(d); closePadLink(d);
   },
+  /* the crate let go of an FM-1 and is done with it (installed or not): "installing" no longer stays on the page */
+  settled: text => { if (!connected) say('device', `${text} Connect again to use it here.`, 'hint'); },
   rescan: async () => (await scan()).map(d => ({key: portKey(d), title: d.info.title})),
   readSave: (key, pr) => crateLink(key).exportSave(pr),
   readRom: async (key, pr) => romFromSlot(await crateLink(key).exportCartridge(pr)),

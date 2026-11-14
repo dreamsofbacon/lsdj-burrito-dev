@@ -133,7 +133,7 @@ export async function loadOnto(id, i, slot = null) {
   busyDeck = i; draw();
   const show = (text, n, t) => { dj.loading?.(i, text, n, t); say(`Deck ${d.name}: ${text}`, 'hint'); };
   const leave = e => { e.preventDefault(); e.returnValue = ''; };
-  let wake = null;
+  let wake = null, released = false, failed = false;
   try {
     if (!rom) {
       dj.stop?.(i);
@@ -150,11 +150,17 @@ export async function loadOnto(id, i, slot = null) {
     const pkg = await prepare(rom);
     const target = app.ports(d.key);
     if (!target) throw Error('That FM-1 went away. Nothing was installed.');
-    const avoid = [...app.otherPorts(d.key), ...(dj.avoid?.(i) || [])];
+    /* the DJ's other ports (the mixer's, an outside master clock, other decks): never this deck's FM-1 itself. Windows
+       numbers ports again (output-3 is whichever device came third), so a mixer port kept from another day can carry
+       this FM-1's id now: it stopped every crate install with "in use elsewhere" (Colin's Log, a77f551). */
+    const own = id => id === target.input || id === target.output, djPorts = dj.avoid?.(i) || [];
+    if (djPorts.some(own)) logEvent(`Deck ${d.name}: the DJ layout also has this FM-1's port (${djPorts.filter(own).join(', ')}) as its mixer, master clock or another deck's; left out for this install.`);
+    const avoid = [...app.otherPorts(d.key), ...djPorts.filter(id => !own(id))];
+    if (avoid.some(own)) throw Error('Another FM-1 shows up on the same port as this one. Unplug the others and try again. Nothing was installed.');
     const others = new Set((await app.rescan()).map(x => x.key).filter(k => k !== d.key));
     await app.volumeFull?.(d.key);   /* it comes back at full volume whatever happens */
     dj.stop?.(i); dj.assign?.(i, '');
-    app.release(d.key);
+    app.release(d.key); released = true;
     addEventListener('beforeunload', leave);
     try { wake = await navigator.wakeLock?.request('screen'); } catch { wake = null; }
     setInstallTarget(d.key);
@@ -191,12 +197,14 @@ export async function loadOnto(id, i, slot = null) {
     say(`Deck ${d.name} has "${label}" (${r.id}).`, 'ok');
   } catch (e) {
     setInstallTarget(null);
+    failed = true;
     logEvent(`Deck ${d.name}: loading "${label}" stopped: ${e.message}`);
     say(`Deck ${d.name}: ${e.message}`, e.resumable ? 'warn' : 'bad');
   } finally {
     removeEventListener('beforeunload', leave);
     try { await wake?.release(); } catch { /* gone */ }
     busyDeck = -1; dj.loading?.(i, null); draw();
+    if (released) app.settled?.(failed ? `The DJ crate stopped on deck ${d.name}'s FM-1 (see the Log).` : `The DJ crate is done with deck ${d.name}'s FM-1.`);
     document.dispatchEvent(new Event('firmware-install-state'));
   }
 }
