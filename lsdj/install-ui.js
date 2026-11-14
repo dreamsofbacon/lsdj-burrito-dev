@@ -11,6 +11,7 @@ const log = (text) => { const el = $('fw-log'); el.textContent += `${new Date().
 let pkg = null, fileName = '', busy = false, wake = null;
 let selection = 0, generated = false, preparing = false;
 let firmwareBytes = null;
+let swapSlot = null;   /* a prepared firmware's LSDj slot: the fast swap when the FM-1 already runs this firmware */
 export const getFirmwareSelection = () => pkg && !preparing ? {name: fileName, product: pkg.product} : null;
 export function usbMidiUnavailable() {
   if (!globalThis.isSecureContext) return 'USB MIDI requires HTTPS or localhost.';
@@ -43,7 +44,7 @@ export let beforeInstall = async () => {};   // the page closes its own link to 
 export function setBeforeInstall(f) { beforeInstall = f; }
 
 function clearFirmware() {
-  ++selection; pkg = null; generated = false; firmwareBytes = null; fileName = '';
+  ++selection; pkg = null; generated = false; firmwareBytes = null; fileName = ''; swapSlot = null;
   $('fw-install').disabled = true; $('fw-info').textContent = '';
   $('fw-progress').hidden = true;
   updateControls();
@@ -58,11 +59,11 @@ export function setPreparingFirmware(value) {
   preparing = value;
   updateControls();
 }
-export function selectFirmware(bytes, name, fromRom = false) {
+export function selectFirmware(bytes, name, fromRom = false, slot = null) {
   if (busy) throw new InstallError('An installation is already running.');
   const checked = checkPackage(bytes);
   clearFirmware();
-  pkg = checked; fileName = name; generated = fromRom; firmwareBytes = bytes.slice();
+  pkg = checked; fileName = name; generated = fromRom; firmwareBytes = bytes.slice(); swapSlot = slot?.slice() ?? null;
   $('fw-file').value = '';
   $('fw-info').textContent = `Firmware: ${name} (${pkg.product}), checks passed.`;
   $('fw-info').className = 'hint';
@@ -114,14 +115,20 @@ $('fw-install').onclick = async () => {
     catch (_) { throw new InstallError('MIDI access was blocked. Allow it (with SysEx) for this page, then press Install again. Nothing was installed.'); }
     const names = {found: 'Found the FM-1', stage: 'Preparing the update (nothing is changed yet)', loader: 'The FM-1 is restarting into update mode',
                    write: 'Writing the firmware: keep the cable in', restart: 'Written. The FM-1 is restarting', done: 'Done',
-                   replug: REPLUG.update, 'replug-back': REPLUG.back};
+                   replug: REPLUG.update, 'replug-back': REPLUG.back,
+                   swap: 'The FM-1 already runs this firmware: changing only its LSDj (songs saved first). Keep the cable in'};
+    let swapped = false;
     const id = await install(access, pkg, {
-      log,
-      onStep: (s, d) => { log(names[s] + (d ? `: ${d}` : '')); if (s !== 'done') say(names[s] + (s.startsWith('replug') ? '' : '…'), s === 'write' || s.startsWith('replug') ? 'warn' : 'hint'); },
+      log, slot: swapSlot,
+      onStep: (s, d) => {
+        if (s === 'swap') swapped = true;
+        log(names[s] + (d ? `: ${d}` : ''));
+        if (s !== 'done') say(names[s] + (s.startsWith('replug') ? '' : '…'), s === 'write' || s === 'swap' || s.startsWith('replug') ? 'warn' : 'hint');
+      },
       onProgress: (b, t) => { bar.max = t; bar.value = b; }
     });
     bar.value = bar.max;
-    say(`Installed: the FM-1 now runs ${id}.`, 'ok');
+    say(swapped ? `Done: LSDj changed, the FM-1 runs ${id}.` : `Installed: the FM-1 now runs ${id}.`, 'ok');
     document.dispatchEvent(new CustomEvent('firmware-installed', {detail: {id}}));   /* songs-ui.js: a set's songs follow */
   } catch (err) {
     log('Stopped: ' + err.message);

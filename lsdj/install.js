@@ -10,6 +10,8 @@
 // Host simulations cannot guarantee recovery after power loss on physical hardware.
 import {Updater, UPGRADE, STAGE_DONE, WRITE_DONE, isFm1} from '../vendor/fm1ota.js';
 import {Package, logicalImage} from '../vendor/fm1pkg.js';
+import {Link, crc32, rd32} from './link.js';
+import {slotSums, swapSlot} from './swap.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* After a restart Windows sometimes misses the FM-1 joining USB (seen 2026-11-12/13: it waited on UPDATE MODE:
@@ -83,14 +85,63 @@ export async function installOn(access, pkg, {target, avoid = [], Transport = Up
   return {id, confirmed: others.every(present)};
 }
 
+/* The fast LSDj swap (0.9.98-dev.6, swap.js): the FM-1 already runs this package's firmware, so only its LSDj slot
+   changes, the sectors that differ. null: this FM-1 cannot swap, or the swap stopped before anything changed (the
+   caller installs instead); else the identity it reports after its restart. */
+async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hintMs, waitMs, LinkClass}) {
+  const {input, output} = dev.link;
+  dev.link.close();
+  let link = new LinkClass(input, output), begun = false, r;
+  try {
+    const sums = await slotSums(link).catch(() => null);
+    if (!sums || sums.capacity !== slot.length) { log('This FM-1 cannot swap its LSDj: installing the whole firmware.'); return null; }
+    r = await swapSlot(link, slot, {sums, onStep: (s, d, t) => {
+      if (s === 'begin') onStep('swap');
+      if (s === 'begun') begun = true;
+      if (s === 'write') onProgress(d, t);
+    }});
+  } catch (e) {
+    if (!begun) { log(`The swap did not start (${e.message}): installing the whole firmware.`); return null; }
+    throw new InstallError(`The LSDj swap stopped (${e.message}). Your songs were saved first. The FM-1 restarts by itself, ` +
+      'without LSDj if part of it was written: press Install again (it swaps, or installs).', {resumable: true});
+  } finally { link.close(); }
+  if (!r.sent) { onStep('done', product); return product; }   /* it already had this LSDj */
+  if (r.unconfirmed) log('The FM-1 did not confirm the end of the swap: checking after its restart.');
+  onStep('restart');
+  await sleep(2000);
+  const back = await waitWithHint(up, (id) => id.model === 'FM-1', () => onStep('replug-back'), {hintMs, waitMs});
+  if (!back) throw new InstallError('The swap finished, but the FM-1 did not report back. Check its screen; unplug its USB cable and plug it back in.', {resumable: true});
+  const {input: i2, output: o2} = back.link;
+  back.link.close();
+  link = new LinkClass(i2, o2);
+  try {
+    /* the slot it now runs: its header CRC (CART_INFO), so a slot that did not check out (no LSDj) is told */
+    const cart = await link.cartridgeInfo().catch(() => null);
+    if (!cart || cart.headerCrc !== rd32(slot, 252) || cart.headerCrc !== crc32(slot.subarray(0, 252)))
+      throw new InstallError('The FM-1 restarted without the new LSDj. Press Install again (it swaps, or installs).', {resumable: true});
+  } finally { link.close(); }
+  onStep('done', back.id.text);
+  return back.id.text;
+}
+
 /* Install (or finish an interrupted install of) pkg. onStep(phase, detail): 'found', 'stage', 'loader',
    'write', 'restart', 'done', and 'replug' / 'replug-back' when the FM-1 is slow to answer after a restart; onProgress(bytes, total) during the write. Resolves the identity the FM-1
-   reports afterwards. */
-export async function install(access, pkg, {log = () => {}, onStep = () => {}, onProgress = () => {}, Transport = Updater, hintMs, waitMs} = {}) {
+   reports afterwards.
+   slot (0.9.98-dev.6): the package's LSDj slot (its whole capacity, lsdj-firmware.js). If the FM-1 already runs
+   this very firmware and can swap, only the slot changes ('swap', then onProgress(sectors, total), 'restart',
+   'done'); otherwise the whole install, as before. */
+export async function install(access, pkg, {log = () => {}, onStep = () => {}, onProgress = () => {}, Transport = Updater, hintMs, waitMs,
+                                            slot = null, LinkClass = Link} = {}) {
   const up = new Transport(access, log);
   let dev = await up.findAny(isFm1);
   if (!dev) throw new InstallError('No FM-1 found. Connect it with a USB data cable, close M-UPGRADE and other MIDI apps, and try again. Nothing was installed.');
   onStep('found', dev.id.text);
+  if (slot && dev.id.model === 'FM-1' && dev.id.text === pkg.product) {
+    const id = await swapInstead(up, dev, slot, pkg.product, {log, onStep, onProgress, hintMs, waitMs, LinkClass});
+    if (id) return id;
+    dev = await up.findAny(isFm1);   /* (its updater's link was closed for the swap) */
+    if (!dev) throw new InstallError('The FM-1 went away. Nothing was installed.');
+  }
   try {
     if (dev.id.model === 'FM-1') {
       // step 1: the running firmware stages the loader; nothing is committed without our "success"

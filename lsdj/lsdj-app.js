@@ -247,7 +247,7 @@ $('rom-build').onclick = async () => {
       {versions, experimental: $('rom-experimental').checked});
     if (seq !== generation) return;
     const name = `lsdj-burrito-${metadata?.release || result.product}-experimental.fwsc`;
-    selectFirmware(result.bytes, name, true);
+    selectFirmware(result.bytes, name, true, result.slot);
     downloadUrl = URL.createObjectURL(new Blob([result.bytes], {type: 'application/octet-stream'}));
     $('rom-download').href = downloadUrl; $('rom-download').download = name; $('rom-download').hidden = false;
     $('rom-actions').hidden = false;

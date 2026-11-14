@@ -32,8 +32,10 @@ export function sectorsToSend(slot, sums) {
 }
 
 /* Swap the FM-1's slot for `slot` (capacity bytes: the slot as the template holds it, 0xFF after the data).
-   onStep(name, done, total): 'begin', 'write' (per sector), 'end'. Resolves {sent, sectors}: sent 0 = it already
-   had this slot (nothing changed, LSDj carries on). After a swap the FM-1 restarts: the caller waits for it. */
+   onStep(name, done, total): 'begin', 'begun' (BEGIN taken: from here on the FM-1 ends in a restart; an error
+   before it changed nothing), 'write' (per sector), 'end'. Resolves {sent, sectors, unconfirmed}: sent 0 = it
+   already had this slot (nothing changed, LSDj carries on); unconfirmed: END's reply never came (the FM-1 may
+   have finished: check after its restart). After a swap the FM-1 restarts: the caller waits for it. */
 export async function swapSlot(link, slot, {sums, onStep = () => {}, signal} = {}) {
   sums ??= await slotSums(link, {signal});
   if (!sums) throw Error('This FM-1\'s firmware cannot swap LSDj: install instead.');
@@ -42,6 +44,7 @@ export async function swapSlot(link, slot, {sums, onStep = () => {}, signal} = {
   if (!send.length) return {sent: 0, sectors: sums.sectors};
   onStep('begin', 0, send.length);
   await link.req(SWAP_OP.BEGIN, [...le32(crc32(slot)), send.length], {timeout: 15000, signal});   // stores the songs first
+  onStep('begun', 0, send.length);
   for (let i = 0; i < send.length; i++) {
     const k = send[i];
     for (let p = 0; p < SECTOR / PART; p++) {
@@ -53,6 +56,7 @@ export async function swapSlot(link, slot, {sums, onStep = () => {}, signal} = {
   }
   onStep('end', send.length, send.length);
   /* the header, then the whole slot's check (~0.5 MB); not repeated: once done, the FM-1 is restarting */
-  await link.req(SWAP_OP.END, [], {timeout: 10000});
+  try { await link.req(SWAP_OP.END, [], {timeout: 10000}); }
+  catch (e) { if (e.cause !== 'timeout') throw e; return {sent: send.length, sectors: sums.sectors, unconfirmed: true}; }
   return {sent: send.length, sectors: sums.sectors};
 }

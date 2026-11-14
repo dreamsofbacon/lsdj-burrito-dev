@@ -58,5 +58,6 @@ export async function prepareLsdjFirmware(rom, keepKits, template, metadata, {ve
       await sha256hex(loaderBytes(bytes, back, loader)) !== metadata.loader_sha256 ||
       crc16(after) !== back.app.dcrc || checked.product !== metadata.product)
     throw Error('Prepared firmware failed its read-back checks.');
-  return {bytes, product: checked.product, sha256: await sha256hex(bytes), info, plan};
+  /* the slot as the firmware holds it (its whole capacity, 0xFF after the data): the fast swap (install.js) */
+  return {bytes, product: checked.product, sha256: await sha256hex(bytes), info, plan, slot: placed.slice()};
 }
