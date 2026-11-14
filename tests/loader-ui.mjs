@@ -132,7 +132,7 @@ export async function runLoaderUiTests() {
     await choose('rom', synthetic(32, [40]), 'too-large.gb');
     text('rom-budget', /Removing kits cannot make this ROM fit/);
     assert($('rom-build').disabled, 'Oversized required data cannot be prepared');
-    await choose('rom', synthetic(28), 'kit-budget.gb');
+    await choose('rom', synthetic(27), 'kit-budget.gb');   /* 27 + 3 kits: 30 banks, over the slot (487424 from 0.9.98-dev.6); 27 + 2 fit */
     text('rom-budget', /Deselect kits to free at least \d+ KiB/);
     const kits = [...$('rom-kits').querySelectorAll('input')];
     assert(kits.length === 3 && kits.every(k => k.checked), 'All kits selected initially');
