@@ -184,7 +184,7 @@ export async function runUnsupportedMidiUiTests() {
   assert(location.hostname === 'localhost' || location.hostname === '127.0.0.1', 'Run only on a local preview');
   assert(typeof navigator.requestMIDIAccess !== 'function', 'Use a browser/test context without Web MIDI');
   assert($('connect-btn').disabled && $('fw-install').disabled, 'Unsupported USB controls are disabled');
-  text('device', /does not provide Web MIDI/);
+  text('device', /has no Web MIDI/);
   text('fw-support', /M-UPGRADE/);
   const template = new Uint8Array(await (await fetch('lsdj/fm1-lsdj-template.fwsc')).arrayBuffer());
   selectFirmware(template, 'preview-only.fwsc');
@@ -195,7 +195,7 @@ export async function runUnsupportedMidiUiTests() {
     await $('fw-install').onclick();
     text('fw-status', /Nothing was installed/);
     await $('connect-btn').onclick();
-    text('device', /does not provide Web MIDI/);
+    text('device', /has no Web MIDI/);
     await choose('rom', synthetic(), 'download-only.gb');
     $('rom-experimental').checked = true;
     $('rom-experimental').onchange();

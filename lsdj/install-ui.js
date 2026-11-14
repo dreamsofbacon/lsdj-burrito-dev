@@ -15,7 +15,8 @@ let swapSlot = null;   /* a prepared firmware's LSDj slot: the fast swap when th
 export const getFirmwareSelection = () => pkg && !preparing ? {name: fileName, product: pkg.product} : null;
 export function usbMidiUnavailable() {
   if (!globalThis.isSecureContext) return 'USB MIDI requires HTTPS or localhost.';
-  if (typeof navigator.requestMIDIAccess !== 'function') return 'This browser does not provide Web MIDI. Use a supported desktop Chrome or Edge browser for USB.';
+  if (typeof navigator.requestMIDIAccess !== 'function')
+    return 'This browser can\'t reach the FM-1: it has no Web MIDI (on iPhone and iPad, no browser does). Use Chrome on Android, or Chrome or Edge on a computer. Songs & kits, preparing a firmware file and the virtual FM-1 work here.';
   return '';
 }
 function updateControls() {

@@ -1273,7 +1273,11 @@ function drawMixer() {
       el('label', {className: 'dj-small', title: 'Every tempo set here snaps to a whole number: Tap, typing, − / +, the decks, the mixer\'s tempo control'}, whole, ' Whole BPM'),
       check(master.onBar, v => { master.onBar = v; store.set('dj-tempo-bar', v ? '1' : '0'); }, ' Next bar',
         'Pads, ×½ / ×2, LSDj tempos and a glide\'s start wait for the master\'s next bar (while it plays)'),
-      check(master.padGlide, v => { master.padGlide = v; store.set('dj-pad-glide', v ? '1' : '0'); }, ' Pads glide', 'A pad glides to its tempo (over the bars chosen) instead of jumping')));
+      check(master.padGlide, v => { master.padGlide = v; store.set('dj-pad-glide', v ? '1' : '0'); }, ' Pads glide', 'A pad glides to its tempo (over the bars chosen) instead of jumping')),
+    /* a phone on its side (index.html: the compact console): the master's other controls, the top line's and each
+       deck's "by" choices behind ⋯ (#dj-root.more); hidden on a larger screen */
+    btn('⋯', () => { const on = root.classList.toggle('more'); ms.querySelector('.dj-more')?.setAttribute('aria-expanded', String(on)); },
+      {className: 'dj-pad dj-more', ariaLabel: 'More DJ controls', title: 'More: the tempo box, ×½ / ×2, the tempo pads, glide, the clock, Log and set up', ariaExpanded: String(root.classList.contains('more'))}));
   /* the mixer: a channel strip per deck, the crossfader, and its setup (⚙: opens over the strips, never pushing them
      out of the column) */
   m.replaceChildren(...[

@@ -85,6 +85,7 @@ details .hint,details p{font-size:13px;color:var(--muted)}
 .pad-map .pad-slot button:first-child{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pad-map .pad-slot button.on{outline:2px solid var(--accent,#fd2)}
 .pad-map .pad-clear{padding:0 6px}
+@media (max-width:420px){.pad-map{gap:4px 4px}.pad-map .pad-slot button:first-child{padding:8px 6px;font-size:12px}.pad-map .pad-clear{padding:0 4px}}
 .pad-raw{font-size:12px;display:grid;gap:6px;margin:6px 0}
 .pad-raw .pad-b{display:inline-block;min-width:1.8em;text-align:center;margin:0 2px 2px 0;padding:1px 3px;border:1px solid var(--line);border-radius:4px}
 .pad-raw .pad-b.on{background:var(--accent,#fd2);color:#000}.pad-raw .pad-b.part{border-color:var(--accent,#fd2)}
@@ -166,7 +167,7 @@ button.follow[aria-pressed=true]{background:var(--accent);color:var(--accent-ink
 table.fx{border-collapse:collapse;width:100%;font-size:13px}
 table.fx th,table.fx td{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
 #cc-map td:last-child{white-space:normal}
-#cc-map th{padding-top:10px}
+#cc-map th{padding-top:10px;white-space:normal}   /* (the section headings wrap: a phone never widens for them) */
 /* a muted channel: its controls grey but still work (as on the FM-1), and why */
 .fx-pages.muted .fx-card{filter:grayscale(1);opacity:.6}
 /* effects doing nothing now: dimmed, still usable (app.js markIdle); brighter under the pointer or in use */
@@ -942,6 +943,124 @@ body:not(.connected) .pop-body{opacity:.5;pointer-events:none}
 .tip-card p{margin:0;flex:1}
 body:not(.connected) .tip-card{display:none}
 @media (max-width:700px){body.perform .tip-card{bottom:calc(64px + env(safe-area-inset-bottom))}}
+/* ---------- phones (0.9.98-dev.6 on): the page at its own width, never zoomed out ----------
+   A phone widens the page to fit anything wider than its screen, and zooms everything out with it: nothing may stick
+   out. (tests/mobile-ui.mjs checks each layout with this net off.) */
+@media (max-width:960px){html{overflow-x:clip}}
+/* a select with a long option (a game controller's name, an FM-1's ports) never wider than its box */
+select{max-width:100%}
+#pad-pick-row label{display:flex;gap:6px;align-items:center;min-width:0}
+#pad-pick{flex:1;min-width:0;text-overflow:ellipsis}
+.dj-rotate,.dj-more{display:none}
+/* the top bar on a phone: the brand and the chips on one line, the sections a strip that scrolls sideways under it */
+@media (max-width:700px){
+  .top-in{padding:6px 12px;gap:4px 8px}
+  .brand{font-size:14px}.brand small{display:none}
+  .page-nav{order:3;flex:1 0 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -12px;padding:0 8px}
+  .page-nav::-webkit-scrollbar{display:none}
+  .page-nav a{flex:none;padding:8px 10px}
+  .chip{font-size:12px;padding:3px 8px}
+}
+/* Perform's head on an upright phone: title and Keep / ? / Setup; then the FM-1 picker, Follow, Effects | DJ; then the
+   badges (the second line goes when there's one FM-1 and no picker) */
+@media (max-width:700px){
+  body.perform .stage-head{grid-template-areas:"t k h s" "p p f m" "b b b b"}
+  body.perform #stage-pick{grid-area:p;min-width:0;width:100%;max-width:100%;padding:8px 10px;font-size:14px;text-overflow:ellipsis}
+  body.perform #stage-follow{grid-area:f}
+  body.perform #stage-mode{grid-area:m;justify-self:end}
+  body.perform #stage-mode button{padding:8px 12px;font-size:14px}
+  body.perform .preset-slot{min-height:40px;flex:1 0 calc(25% - 4px);max-width:none}
+  body.perform #preset-manage{min-height:40px}
+  body.perform .stage-head button,body.perform .stage-head .button-link,body.perform #stage-pick{min-height:40px}
+  body.perform #pan-screen .panel-head button,body.perform .wire-dir button{min-height:38px}
+}
+/* touch sizes on any phone: the effects' choices and the mute buttons */
+@media (max-width:700px), (max-width:960px) and (max-height:500px) and (orientation:landscape){
+  body.perform .seg button,body.perform .mute-row button,body.perform .page-tabs button{min-height:38px}
+  body.perform .preset-slot,body.perform #preset-manage{min-height:38px}
+}
+/* the DJ layout on an upright phone: a card asking to turn it (the decks keep running) */
+@media (max-width:700px) and (orientation:portrait){
+  body.dj .dj-rotate{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:28px 18px;color:var(--ink)}
+  body.dj .dj-rotate svg{color:var(--accent);animation:dj-turn 2.4s ease-in-out infinite}
+  body.dj .dj-rotate p{margin:0;max-width:30em}
+  body.dj #dj-root{display:none}
+  body.perform.dj #stage-follow,body.perform.dj #stage-pick,body.perform.dj #fx-keep,body.perform.dj #fx-help-btn{display:none}
+}
+@keyframes dj-turn{0%,30%{transform:none}60%,100%{transform:rotate(-90deg)}}
+@media (prefers-reduced-motion:reduce){.dj-rotate svg{animation:none}}
+/* a phone on its side: Perform's head on one line, the picker giving way first */
+@media (max-width:960px) and (max-height:500px) and (orientation:landscape){
+  body.perform .stage-head{gap:6px}
+  body.perform .stage-head h2{flex:0 1 auto;min-width:0;max-width:24%;font-size:15px}
+  body.perform #stage-pick{flex:1 1 0;min-width:0;max-width:34vw;padding:6px 8px;font-size:13px;text-overflow:ellipsis}
+  body.perform #stage-follow,body.perform #stage-mode,body.perform #fx-keep,body.perform #fx-help-btn,body.perform .stage-head .button-link{flex:none}
+  body.perform #stage-mode button{padding:6px 10px;font-size:13px}
+  body.perform .stage-head button,body.perform .stage-head .button-link,body.perform #stage-pick{padding:6px 10px;font-size:13px;min-height:38px}
+  body.perform.dj #live-badges,body.perform.dj #fx-keep,body.perform.dj #fx-help-btn{display:none}   /* (the decks show their own) */
+  body.perform.dj #live-sec{display:block}
+  body.perform.dj #pan-dj{padding:0;border:0;background:none;margin:0}
+  body.perform.dj #pan-dj>.panel-head{display:none}
+  /* the compact console: master on one line (⋯ for the rest), then deck A | mixer | deck B across the screen */
+  .dj-more{display:block}
+  #dj-root:not(.more) .dj-top>:not(.dj-status){display:none}
+  .dj-top{padding-left:0;min-height:0;margin:0 0 4px;flex-wrap:wrap;gap:4px 10px}
+  .dj-top .dj-status{flex-basis:100%;order:-1;font-size:12px}
+  .dj-master{padding:4px 8px;gap:6px;margin:0 0 6px;flex-wrap:nowrap}
+  #dj-root.more .dj-master{flex-wrap:wrap}
+  .dj-master .dj-mb-id h4{display:none}
+  .dj-master .dj-mb-id .dj-bpm.big,.dj-master .dj-mb-id b{font-size:22px}
+  #dj-root:not(.more) .dj-master>:not(.dj-mb-id):not(.dj-mg-tempo):not(.dj-mg-2):not(.dj-more){display:none}
+  #dj-root:not(.more) .dj-master .dj-mg-tempo .dj-bpm-in,#dj-root:not(.more) .dj-master .dj-mg-2 select{display:none}
+  .dj-master .dj-mgrid{flex:0 1 auto}
+  .dj-master .dj-mg-tempo{grid-template-columns:repeat(4,auto)}
+  .dj-master .dj-pad,.dj-more{min-height:36px;min-width:40px;padding:6px 10px}
+  .dj-more{margin-left:auto;font-size:18px;line-height:1}
+  #dj-root.more .dj-more{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+  .dj-grid,.dj-grid.fx-columns{grid-template-columns:minmax(0,1fr) 116px minmax(0,1fr);gap:6px;padding:6px;border-radius:12px}
+  .dj-deck,.dj-mixer{padding:6px}
+  .dj-deck-head{gap:4px;margin:0 0 4px}
+  .dj-deck-head .dj-deck-id{width:26px;height:26px;font-size:14px}
+  .dj-deck-head select{padding:4px 6px;font-size:12px;text-overflow:ellipsis}
+  .dj-cart-chip{display:none}
+  .dj-presets{margin:0 0 4px}
+  .dj-preset{min-height:28px}
+  .dj-warn{font-size:11px;padding:3px 6px;margin:0 0 4px}
+  .dj-deck .dj-top-panel,.dj-deck .dj-jogwheel,.dj-deck .dj-range,.dj-deck .dj-pitch-wrap,.dj-deck .dj-cue-row,.dj-deck .dj-round-wrap .dj-small{display:none}
+  #dj-root:not(.more) .dj-deck .dj-util{display:none}
+  .dj-deck-body{gap:5px}
+  .dj-pads{grid-auto-flow:row;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  .dj-pad{min-height:36px;padding:4px 1px;font-size:10px;letter-spacing:0}
+  .dj-deck-mid{display:flex;align-items:center;justify-content:space-between;gap:6px;height:auto;container-type:normal}
+  .dj-left{flex-direction:row;align-items:center;gap:6px}
+  .dj-round{width:46px;height:46px;font-size:.8em;border-width:2px}
+  .dj-right{flex-direction:row;align-items:center;gap:4px}
+  .dj-right .dj-bpm-label{margin:0}
+  .dj-right .dj-bpm-in{width:4.6em;padding:6px 4px;font-size:13px}
+  .dj-steps{display:flex;gap:4px;width:auto}
+  .dj-steps .dj-tbtn{min-width:34px;min-height:36px;padding:4px 0}
+  .dj-right .dj-sync{width:auto}
+  .dj-sync{min-height:36px;padding:6px 8px}
+  .dj-tempo-row{gap:4px;margin:0}
+  .dj-tempo-row .dj-pad{min-height:36px}
+  .dj-mixer>h4,.dj-mixer .dj-setup,.dj-mixer .dj-learned,.dj-mixer>.hint{display:none}
+  .dj-strips{min-height:0;margin:0 0 6px;gap:4px;flex:1}
+  .dj-strip{padding:4px 2px;gap:3px}
+  .dj-knob{width:40px;height:40px}
+  .dj-meter{display:none}
+  .dj-xrow{gap:4px;min-width:0}
+  .dj-xrow .dj-xfader{min-width:0;width:100%}
+  .dj-lphp{display:none}
+  .dj-grid>.dj-fx,.dj-grid.fx-columns>.dj-fx{position:absolute;top:6px;bottom:6px;z-index:7;width:min(380px,92%);visibility:hidden;box-shadow:0 10px 30px #000a}
+  .dj-grid.fx-columns>.dj-fx-a{left:6px;transform:translateX(calc(-100% - 16px))}
+  .dj-grid.fx-columns>.dj-fx-b{right:6px;transform:translateX(calc(100% + 16px))}
+  .dj-grid>.dj-fx.open,.dj-grid.fx-columns>.dj-fx.open{transform:none;visibility:visible}
+  .dj-grid.fx-columns>.dj-fx-tab{display:block}
+  .dj-fx-tab{padding:8px 3px;font-size:10px}
+  .dj-crate{margin:6px 0 0;padding:4px 8px}
+  .dj-crate.open .crate-body{position:fixed;left:8px;right:8px;top:52px;bottom:8px;z-index:20;margin:0;overflow:auto;padding:10px 12px;
+    background:var(--card2);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px #000b}
+}
 /* songs */
 .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:10px;margin:10px 0}
 .action{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card2);display:flex;flex-direction:column;gap:8px;align-items:flex-start}
@@ -1140,6 +1259,9 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 
 <div class="panel" id="pan-dj" data-pop="dj" data-title="DJ" data-size="1400x820">
 <div class="panel-head"><h3>DJ <span class="hint">· decks, master clock, mixer</span></h3><button class="pop" type="button" title="Open in its own window">⇱</button></div>
+<div class="dj-rotate" role="note"><svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true"><rect x="15" y="6" width="18" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M8 34a17 17 0 0 0 26 8" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M33 37l2 6-6 1" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
+<p><b>Turn your phone sideways</b> for the DJ layout: both decks and the mixer fit across the screen. The decks keep playing meanwhile.</p>
+<p class="hint">Upright, <b>Effects</b> (at the top) works as usual.</p></div>
 <div id="dj-root"></div>
 </div>
 
