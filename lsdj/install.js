@@ -88,7 +88,8 @@ export async function installOn(access, pkg, {target, avoid = [], Transport = Up
 /* The fast LSDj swap (0.9.98-dev.6, swap.js): the FM-1 already runs this package's firmware, so only its LSDj slot
    changes, the sectors that differ. null: this FM-1 cannot swap, or the swap stopped before anything changed (the
    caller installs instead); else the identity it reports after its restart. */
-async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hintMs, waitMs, LinkClass}) {
+export const SWAP_MAX = 24;
+async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hintMs, waitMs, LinkClass, swapMax}) {
   const {input, output} = dev.link;
   dev.link.close();
   let link = new LinkClass(input, output), begun = false, r;
@@ -98,7 +99,11 @@ async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hin
       log(`This FM-1 cannot swap its LSDj (${sums ? `its slot holds ${sums.capacity} bytes, this one ${slot.length}` : 'no slot information'}): installing the whole firmware.`);
       return null;
     }
-    log(`LSDj swap: ${sectorsToSend(slot, sums.sums).length} of ${sums.sectors} sectors differ.`);
+    const differ = sectorsToSend(slot, sums.sums).length;
+    log(`LSDj swap: ${differ} of ${sums.sectors} sectors differ.`);
+    /* a sector takes about 2 s over the link (32 requests, each answered: Colin's FM-1, dev.7, 119 in about 4 min);
+       a whole install about a minute: past SWAP_MAX sectors the whole install is quicker */
+    if (differ > swapMax) { log(`That is most of LSDj: installing the whole firmware instead (quicker).`); return null; }
     r = await swapSlot(link, slot, {sums, onStep: (s, d, t) => {
       if (s === 'begin') onStep('swap');
       if (s === 'begun') begun = true;
@@ -135,7 +140,7 @@ async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hin
    this very firmware and can swap, only the slot changes ('swap', then onProgress(sectors, total), 'restart',
    'done'); otherwise the whole install, as before. */
 export async function install(access, pkg, {log = () => {}, onStep = () => {}, onProgress = () => {}, Transport = Updater, hintMs, waitMs,
-                                            slot = null, LinkClass = Link} = {}) {
+                                            slot = null, LinkClass = Link, swapMax = SWAP_MAX} = {}) {
   const up = new Transport(access, log);
   let dev = await up.findAny(isFm1);
   if (!dev) throw new InstallError('No FM-1 found. Connect it with a USB data cable, close M-UPGRADE and other MIDI apps, and try again. Nothing was installed.');
@@ -143,7 +148,7 @@ export async function install(access, pkg, {log = () => {}, onStep = () => {}, o
   if (slot && !(dev.id.model === 'FM-1' && dev.id.text === pkg.product))
     log(`No LSDj swap: the FM-1 reports ${dev.id.text}, this firmware is ${pkg.product}: installing the whole firmware.`);
   if (slot && dev.id.model === 'FM-1' && dev.id.text === pkg.product) {
-    const id = await swapInstead(up, dev, slot, pkg.product, {log, onStep, onProgress, hintMs, waitMs, LinkClass});
+    const id = await swapInstead(up, dev, slot, pkg.product, {log, onStep, onProgress, hintMs, waitMs, LinkClass, swapMax});
     if (id) return id;
     dev = await up.findAny(isFm1);   /* (its updater's link was closed for the swap) */
     if (!dev) throw new InstallError('The FM-1 went away. Nothing was installed.');

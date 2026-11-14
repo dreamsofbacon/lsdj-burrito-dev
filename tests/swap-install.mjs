@@ -116,6 +116,15 @@ const run = async (slot, o = {}) => {
   await run(null);
   assert.ok(fw.upgraded && fw.ops.length === 0);
 }
+/* 3b. most of LSDj differs (past swapMax sectors): the whole install, quicker than a sector at a time; nothing swapped */
+{
+  reset();
+  const {steps} = await run(slotImage(2), {swapMax: 3});
+  assert.ok(fw.upgraded && !steps.includes('swap') && !fw.ops.includes(SWAP_OP.BEGIN) && fw.written.length === 0);
+  reset();
+  await run(slotImage(2), {swapMax: 4});
+  assert.ok(!fw.upgraded && fw.restarts === 1, 'at the limit: still a swap');
+}
 /* 4. the swap does not start (BEGIN refused: nothing changed): the whole install */
 {
   reset({beginStatus: 4});
