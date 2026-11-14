@@ -11,7 +11,7 @@
 import {Updater, UPGRADE, STAGE_DONE, WRITE_DONE, isFm1} from '../vendor/fm1ota.js';
 import {Package, logicalImage} from '../vendor/fm1pkg.js';
 import {Link, crc32, rd32} from './link.js';
-import {slotSums, swapSlot} from './swap.js';
+import {slotSums, swapSlot, sectorsToSend} from './swap.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* After a restart Windows sometimes misses the FM-1 joining USB (seen 2026-11-12/13: it waited on UPDATE MODE:
@@ -94,7 +94,11 @@ async function swapInstead(up, dev, slot, product, {log, onStep, onProgress, hin
   let link = new LinkClass(input, output), begun = false, r;
   try {
     const sums = await slotSums(link).catch(() => null);
-    if (!sums || sums.capacity !== slot.length) { log('This FM-1 cannot swap its LSDj: installing the whole firmware.'); return null; }
+    if (!sums || sums.capacity !== slot.length) {
+      log(`This FM-1 cannot swap its LSDj (${sums ? `its slot holds ${sums.capacity} bytes, this one ${slot.length}` : 'no slot information'}): installing the whole firmware.`);
+      return null;
+    }
+    log(`LSDj swap: ${sectorsToSend(slot, sums.sums).length} of ${sums.sectors} sectors differ.`);
     r = await swapSlot(link, slot, {sums, onStep: (s, d, t) => {
       if (s === 'begin') onStep('swap');
       if (s === 'begun') begun = true;
@@ -136,6 +140,8 @@ export async function install(access, pkg, {log = () => {}, onStep = () => {}, o
   let dev = await up.findAny(isFm1);
   if (!dev) throw new InstallError('No FM-1 found. Connect it with a USB data cable, close M-UPGRADE and other MIDI apps, and try again. Nothing was installed.');
   onStep('found', dev.id.text);
+  if (slot && !(dev.id.model === 'FM-1' && dev.id.text === pkg.product))
+    log(`No LSDj swap: the FM-1 reports ${dev.id.text}, this firmware is ${pkg.product}: installing the whole firmware.`);
   if (slot && dev.id.model === 'FM-1' && dev.id.text === pkg.product) {
     const id = await swapInstead(up, dev, slot, pkg.product, {log, onStep, onProgress, hintMs, waitMs, LinkClass});
     if (id) return id;

@@ -162,14 +162,18 @@ export async function loadOnto(id, i, slot = null) {
       write: 'Writing the firmware: keep the cable in', restart: 'Written. Restarting', done: 'Installed', replug: REPLUG.update, 'replug-back': REPLUG.back,
       swap: 'Changing only its LSDj (songs saved first): keep the cable in'};
     let step = '', restarted = false;
+    logEvent(`Deck ${d.name}: installing "${item.name}" (${pkg.product}) on ${target.output}.`);
     const r = await installOn(app.access(), checkPackage(pkg.bytes), {target, avoid, slot: pkg.slot,
-      onStep: s => { step = s; if (s === 'restart' || s === 'loader') restarted = true; show(s.startsWith('replug') ? names[s] : `${names[s]}…`); },
+      log: t => logEvent(`Deck ${d.name}: ${t}`),
+      onStep: s => { step = s; if (s === 'restart' || s === 'loader') restarted = true; logEvent(`Deck ${d.name}: ${names[s] || s}.`);
+        show(s.startsWith('replug') ? names[s] : `${names[s]}…`); },
       onProgress: (n, t) => show(`${names[step === 'swap' ? 'swap' : 'write']}…`, n, t)});
     setInstallTarget(null);
     /* the restarted FM-1: the one found now that wasn't there before (none restarted: it already had this LSDj) */
     await wait(1500);
     const fresh = (await app.rescan()).filter(x => !others.has(x.key));
     const back = !restarted ? {key: d.key} : r.confirmed && fresh.length === 1 ? fresh[0] : null;
+    logEvent(`Deck ${d.name}: installed ${r.id}${restarted ? `; FM-1s found after its restart: ${fresh.length}${r.confirmed ? '' : ' (another went away)'}` : ' (it already had this LSDj)'}.`);
     if (!back) {
       say(`Installed ${r.id}, but the page can't tell which FM-1 restarted${r.confirmed ? '' : ' (another FM-1 was unplugged meanwhile)'}. ` +
         `Choose it for deck ${d.name}${sav ? ', then load the songs' : ''}.`, 'warn');
@@ -187,6 +191,7 @@ export async function loadOnto(id, i, slot = null) {
     say(`Deck ${d.name} has "${label}" (${r.id}).`, 'ok');
   } catch (e) {
     setInstallTarget(null);
+    logEvent(`Deck ${d.name}: loading "${label}" stopped: ${e.message}`);
     say(`Deck ${d.name}: ${e.message}`, e.resumable ? 'warn' : 'bad');
   } finally {
     removeEventListener('beforeunload', leave);
