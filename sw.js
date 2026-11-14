@@ -15,7 +15,7 @@ const FILES = [
   'fonts/IBMPlexMono-Regular-Latin1.woff2', 'fonts/IBMPlexMono-SemiBold-Latin1.woff2',
   'lsdj/app.js', 'lsdj/fx-diagram.js', 'lsdj/fx-model.js', 'lsdj/gamepad.js', 'lsdj/install-ui.js', 'lsdj/install.js', 'lsdj/link.js',
   'lsdj/lsdj-app.js', 'lsdj/lsdj-firmware.js', 'lsdj/lsdj-rom.js', 'lsdj/midiclock.js', 'lsdj/dj.js', 'lsdj/dj-ui.js', 'lsdj/song-key.js', 'lsdj/dj-fx.js', 'lsdj/dj-tempo.js', 'lsdj/mixers.js', 'lsdj/crate.js', 'lsdj/crate-ui.js', 'lsdj/cart-maker.js', 'lsdj/cart-label.js', 'lsdj/cart-core.js', 'lsdj/cart-worker.js', 'lsdj/conn-log.js', 'lsdj/page-theme.js', 'lsdj/popout.js', 'lsdj/pwa.js',
-  'lsdj/save-file.js', 'lsdj/screen.js', 'lsdj/ui.js', 'lsdj/zip.js',
+  'lsdj/save-file.js', 'lsdj/screen.js', 'lsdj/ui.js', 'lsdj/zip.js', 'lsdj/presets.js', 'lsdj/presets-ui.js', 'lsdj/swap.js',
   'lsdj/lsdj-sav.js', 'lsdj/lsdj-kit.js', 'lsdj/lsdj-usage.js', 'lsdj/songs-ui.js', 'lsdj/kits-ui.js', 'lsdj/wav-kit.js',
   'lsdj/lsdj-sets.js', 'lsdj/kit-library.js', 'lsdj/sets-ui.js',
   'lsdj/template.json', 'lsdj/versions.json', 'lsdj/fm1-lsdj-template.fwsc',

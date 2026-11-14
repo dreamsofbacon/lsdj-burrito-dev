@@ -36,7 +36,8 @@ function fm1(n, title, fw = 'FM-1_997') {
     settings: packSettings({...unpackSettings(0x5a000000), theme: n % PRESETS.length}),   /* each its own theme */
     infos: 0, reads: 0, begins: 0, importing: null, save: fakeSave([{slot: 0, name: 'TECHNO', version: 2, blocks: 10}], 0),
     midiWord: (0x4D000000 | 1 | 8 | 1 << 11 | 1 << 17) >>> 0, midiSets: [], sync: 5, syncSets: [], dev2: true,
-    djs: [], djAsks: 0, dev4: true};   /* DJ_DECK states the page sent (0.9.98-dev.4) */   /* MIDI: CLOCK IN ALL, TRANSPORT ON, PC CUE ON; LSDj SYNC KEYBD */
+    djs: [], djAsks: 0, dev4: true,   /* DJ_DECK states the page sent (0.9.98-dev.4) */
+    dev6: fw >= 'FM-1_998', presetNames: ['DUB', null, 'LOFI', null, null, null, null, 'LAST'], presetCur: 0, presetLoads: []};   /* presets (0.9.98-dev.6) */   /* MIDI: CLOCK IN ALL, TRANSPORT ON, PC CUE ON; LSDj SYNC KEYBD */
   const fx = Array(68).fill(0); d.fxBytes = fx;   /* (a knob turned on the FM-1: change these) */
   fx[36] = 5; fx[37] = 2; fx[42] = 0xf2; fx[38] = 1;
   d.input = Object.assign(new EventTarget(), {id: `in-${n}`, name: 'FM-1', state: 'connected', onmidimessage: null});
@@ -57,7 +58,7 @@ function fm1(n, title, fw = 'FM-1_997') {
     const reply = (data = [], status = 0) => () => d.input.onmidimessage?.({   /* d.slow[op]: ms before that op's reply (a busy FM-1) */
       data: [0xf0, 0x7d, 0x47, 0x53, op, status, ...data.flatMap(b => [b & 127, b >> 7]), 0xf7]});
     const send = (data, status) => d.slow?.[op] ? void setTimeout(reply(data, status), d.slow[op]) : queueMicrotask(reply(data, status));
-    if (op === OP.INFO) { d.infos++; const info = Array(35).fill(0); info[0] = 1; [...fw].forEach((c, i) => info[1 + i] = c.charCodeAt(0)); [...title].forEach((c, i) => info[9 + i] = c.charCodeAt(0));
+    if (op === OP.INFO) { d.infos++; const info = Array(35).fill(0); info[0] = 1; info[34] = d.dev6 ? 8 : 0; [...fw].forEach((c, i) => info[1 + i] = c.charCodeAt(0)); [...title].forEach((c, i) => info[9 + i] = c.charCodeAt(0));
       const crc = crc32(d.save); [0, 8, 16, 24].forEach((s, i) => info[29 + i] = (crc >>> s) & 255); return send(info); }
     if (op === OP.READ) { const off = body[0] | body[1] << 8 | body[2] << 16 | body[3] << 24; d.reads++; return send([...d.save.subarray(off, off + 128)]); }
     /* a .sav sent (Songs › Send, the crate): taken whole at COMMIT */
@@ -76,6 +77,11 @@ function fm1(n, title, fw = 'FM-1_997') {
     if (op === OP.MIDI_SET) { d.midiWord = (body[0] | body[1] << 8 | body[2] << 16 | body[3] << 24) >>> 0; d.midiSets.push(d.midiWord); return send(); }
     if (op === OP.SYNC_SET && fw >= 'FM-1_998' && d.dev2) { if (d.playing) return send([], 2); d.syncSets.push(body[0]); d.sync = body[0]; return send(); }
     if (op === OP.DJ_DECK) { d.djAsks++; if (fw >= 'FM-1_998' && d.dev4) { d.djs.push(body[0]); return send(); } return send([], 1); }
+    if (d.dev6 && op === OP.PRESET_LIST) return send([d.presetCur ?? 0xFF, ...d.presetNames.flatMap(n => n ? [1, ...[...n.padEnd(12, ' ')].map(c => c.charCodeAt(0))] : Array(13).fill(0))]);
+    if (d.dev6 && op === OP.PRESET_GET) { const n = d.presetNames[body[0]], b = Array(128).fill(0);
+      if (n) { b[0] = 0x50; b[1] = 19; [...n.padEnd(12, ' ')].forEach((c, i) => b[2 + i] = c.charCodeAt(0)); b[16 + 42] = 0xf2; b[16 + 68] = 30; b[16 + 69] = 64; b[16 + 70] = 64; }
+      return send(b); }
+    if (d.dev6 && op === OP.PRESET_LOAD) { if (!d.presetNames[body[0]]) return send([], 2); d.presetLoads.push(body[0]); d.presetCur = body[0]; return send(); }
     if (op === OP.LIVE) return send([1, 1, (d.lsdjBpm ?? 120) & 255, (d.lsdjBpm ?? 120) >> 8, d.mutes.at(-1) || 0, 0, d.playing || 0, ...fx, ...dj]);   /* d.playing: the channels playing (a bit each) */
     if (fw >= 'FM-1_998' && op === OP.VOLUME_SET) { d.levels.push(body[0]); d.level = body[0]; return send(); }
     if (fw >= 'FM-1_998' && op === OP.SEQ_SET) { d.seqs.push(body[0]); d.seq = body[0]; return send(); }
@@ -123,6 +129,21 @@ export async function runDjUiTests() {
     choose($('sync-mode'), 'page');
     choose(pickA, 'fm1:out-1'); choose(pickB, 'fm1:out-2');
     await until(() => djState().decks[0].fx && djState().decks[1].fx, 'each deck read its FM-1\'s effects');
+
+    // 2p. presets (0.9.98-dev.6): deck B's FM-1 has them, a strip of 8 (DUB current, slot 2 empty); deck A's doesn't
+    //     (its firmware is older); a tap loads one (the current lit), an empty one says so and sends nothing
+    { const deckEl = i => [...document.querySelectorAll('.dj-deck')][i], strip = i => deckEl(i).querySelector('.dj-presets');
+      await until(() => !strip(1).hidden && strip(1).children.length === 8, 'deck B: its presets strip');
+      assert(strip(0).hidden, 'deck A: no presets strip (firmware without them)');
+      const btn = k => strip(1).children[k];
+      assert(btn(0).classList.contains('on') && btn(1).classList.contains('empty') && /LOFI/.test(btn(2).title), `deck B's strip: ${strip(1).innerHTML}`);
+      btn(2).click();
+      await until(() => B.presetLoads.at(-1) === 2 && btn(2).classList.contains('on') && !btn(0).classList.contains('on'), `deck B: preset 3 loaded: ${B.presetLoads}`);
+      assert(/Deck B: preset 3, LOFI/.test(document.querySelector('.dj-status').textContent), 'deck B: said so');
+      btn(1).click(); await sleep(100);
+      assert(B.presetLoads.length === 1 && /preset 2 is empty/.test(document.querySelector('.dj-status').textContent), 'an empty slot: nothing sent, said so');
+      assert(!A.presetLoads.length, 'deck A untouched');
+      assert($('preset-row').hidden, 'Perform › Master: no presets row for FM-1 A (firmware without them)'); }
 
     // 2b. DJ colours: the page and the DJ panel in a theme of their own (Midnight); FM-1 decks keep their FM-1's colours
     const midnight = pageColours(PRESETS[6]), deckBox = [...document.querySelectorAll('.dj-deck')][0];

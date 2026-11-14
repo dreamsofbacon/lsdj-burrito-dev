@@ -12,7 +12,8 @@ export const OP = {INFO: 0x01, READ: 0x02, BEGIN: 0x03, CHUNK: 0x04, COMMIT: 0x0
   CART_INFO: 0x22, CART_READ: 0x23, MUTE_SET: 0x24, SCREEN_INFO: 0x25, SCREEN_ROW: 0x26,
   SCREEN_SYNC: 0x27, SCREEN_PIXELS: 0x28, SCREEN_FRAME: 0x29, REVERB_GET: 0x2A, REVERB_SET: 0x2B, PAD_SET: 0x2C,
   REVERB_SENDS_GET: 0x2D, REVERB_SENDS_SET: 0x2E, VOLUME_SET: 0x2F, SEQ_SET: 0x30, SONG_ROWS: 0x31, SYNC_SET: 0x32,
-  DJ_DECK: 0x33, DJ_KEY: 0x34};
+  DJ_DECK: 0x33, DJ_KEY: 0x34,
+  PRESET_LIST: 0x35, PRESET_GET: 0x36, PRESET_PUT: 0x37, PRESET_LOAD: 0x38, PRESET_SAVE: 0x39};
 export const STATUS = ['ok', 'bad request', 'wrong state', 'checksum mismatch', 'flash error'];
 export const CHUNK = 128;
 export const SAVE_SIZE = 131072;
@@ -306,6 +307,29 @@ export class Link {
   }
   /* the same, not waited for (the page closing: no time for a reply) */
   djDetach() { return this.post(OP.DJ_DECK, [0]); }
+  /* 0.9.98-dev.6, the presets (firmware/lsdj_presets.h, lsdj/presets.js); INFO's presets says the FM-1 has them.
+     The list: {current (0..7, null none), names: [8, null = empty]} */
+  async presetList() {
+    const d = (await this.req(OP.PRESET_LIST, [], {retries: 2})).data;
+    if (d.length !== 1 + 8 * 13) throw new LinkError('Invalid presets list from the FM-1.');
+    return {current: d[0] < 8 ? d[0] : null,
+      names: Array.from({length: 8}, (_, i) => d[1 + 13 * i] ? String.fromCharCode(...d.slice(2 + 13 * i, 14 + 13 * i)).replace(/\0.*$/, '').trim() : null)};
+  }
+  /* a slot's 128 bytes */
+  async presetGet(i) {
+    const d = (await this.req(OP.PRESET_GET, [i], {retries: 2, accept: r => r.status || r.data.length === 128})).data;
+    if (d.length !== 128) throw new LinkError('Invalid preset from the FM-1.');
+    return Uint8Array.from(d);
+  }
+  /* 128 bytes into slot i (zeros: empty it); false if the FM-1 refuses them (a value out of range) */
+  async presetPut(i, bytes) { return !(await this.req(OP.PRESET_PUT, [i, ...bytes], {timeout: 2500, retries: 1, allow: [0, 1]})).status; }
+  /* load slot i as EDIT + its key does: 'ok', or 'empty' */
+  async presetLoad(i) { return (await this.req(OP.PRESET_LOAD, [i], {retries: 1, allow: [0, 2]})).status ? 'empty' : 'ok'; }
+  /* everything now into slot i, with this name (12 characters; none: keep the slot's) */
+  async presetSave(i, name) {
+    const n = name == null ? [] : [...String(name).padEnd(12, ' ').slice(0, 12)].map(c => c.charCodeAt(0) & 127);
+    await this.req(OP.PRESET_SAVE, [i, ...n], {timeout: 2500, retries: 1});
+  }
   /* 16 song rows from row (each: 4 chains, null empty), or null */
   async songRows(row) {
     const r = await this.req(OP.SONG_ROWS, [row & 255], {retries: 2, allow: [0, 1], accept: r => r.status || r.data[0] === (row & 255)});
@@ -333,7 +357,8 @@ export function battery(b) {
 /* INFO's reply -> {protocol, firmware, title, ...} */
 export function infoFrom(d) {
   const str = (a, b) => String.fromCharCode(...d.slice(a, b)).replace(/\0.*$/, '');
-  return {protocol: d[0], firmware: str(1, 9), title: str(9, 25), saveSize: rd32(d, 25), saveCrc: rd32(d, 29), importing: d[33], liveKnown: !!(d[34] & 1), tags: !!(d[34] & 2)};
+  return {protocol: d[0], firmware: str(1, 9), title: str(9, 25), saveSize: rd32(d, 25), saveCrc: rd32(d, 29), importing: d[33], liveKnown: !!(d[34] & 1), tags: !!(d[34] & 2),
+    presets: !!(d[34] & 8)};   /* 0.9.98-dev.6: PRESET_* */
 }
 
 /* An FM-1 known again on new ports (Windows numbers them again when it comes back, and its port name can change:

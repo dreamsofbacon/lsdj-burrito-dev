@@ -30,6 +30,7 @@ import {mountCrate, setCrateHooks, dropOnDeck, crateRedraw, CRATE_TYPE} from './
 import {savHeader, HEADER, HEADER_SIZE, BLOCK_COUNT} from './lsdj-sav.js';
 import {PARTS as KEY_PARTS, songKeys} from './song-key.js';
 import {logEvent, logText, clearLog} from './conn-log.js';
+import {fromSlot, KEYS as PRESET_KEYS} from './presets.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* this visit */ } }};
@@ -268,6 +269,7 @@ async function assign(d, value) {
   d.key = ''; d.kind = ''; d.live = null; d.fx = null; d.rv = null; d.base = null; d.throwing = null; d.kill = 0; d.killWant = null; d.killDoneAt = null; d.killDirty = 0; d.ccFx = 0; cancelLater(d.killTimer); d.killTimer = 0; d.levelPosted = null; d.filter = 0; setSynced(d, false); deckBend(d, 1); d.nudging = false;
   d.savHead = null; d.sav = null; d.savMatch = null; d.savAt = 0; d.seenPlaying = false; d.idlePolls = 0;
   d.song = null; d.songRead = null; d.songAt = null; d.songKeys = null;   /* (songAt null: never read) */
+  d.presets = null; d.presetsAt = 0; drawPresets(d);
   d.syncTried = null; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
   d.level = null; d.levelSent = 127; d.scrOk = true; d.themeAt = 0; d.map = null; d.mapFrom = -1; d.mapFill = null;
   paintDeck(d, null);
@@ -808,8 +810,52 @@ async function pollDeck(d) {
     if (now() - (d.themeAt || 0) > (playingNow(d) ? THEME_PLAYING_MS : THEME_MS)) await deckTheme(d, l);
     if (now() - (d.savAt || 0) > SAV_MS) await deckSav(d, l).catch(() => {});   /* (an import under way: next time) */
     await deckSong(d, l).catch(e => { d.songErr = String(e?.message ?? e); });   /* (kept for the tests; tried again next poll) */
+    await deckPresets(d, l).catch(() => {});
     if (deckView(d) === 'rows') { await readMap(d, l); drawMap(d); }   /* (read only while the rows show) */
   } catch { d.live = null; }
+}
+
+/* ---------- presets (FM-1 0.9.98-dev.6, lsdj/presets.js) ----------
+   A strip of 8 under the deck's head: a tap loads that preset on the deck's FM-1, as EDIT + its key does there (its
+   effects slide over PRESET GLIDE). The list read every PRESET_MS (a slot loaded on the FM-1 shows too). */
+const PRESET_MS = 3000;
+const hasPresets = d => d.kind === 'fm1' && !!hooks.devices().find(x => x.key === d.key)?.presets;
+async function deckPresets(d, l) {
+  if (!hasPresets(d)) { if (d.presets) { d.presets = null; drawPresets(d); } return; }
+  if (d.presets && now() - d.presetsAt < PRESET_MS) return;
+  const key = d.key, got = await l.presetList();
+  if (d.key !== key) return;
+  d.presetsAt = now();
+  if (JSON.stringify(got) !== JSON.stringify(d.presets)) { d.presets = got; drawPresets(d); }
+}
+function drawPresets(d) {
+  const row = d.ui?.presets;
+  if (!row) return;
+  const p = d.presets;
+  row.hidden = !p;
+  if (!p) return row.replaceChildren();
+  row.replaceChildren(...p.names.map((name, i) => {
+    const b = el('button', {type: 'button', className: 'dj-preset' + (name ? '' : ' empty') + (p.current === i ? ' on' : ''), textContent: String(i + 1),
+      title: name ? `Preset ${i + 1}: ${name} (on the FM-1: EDIT + ${PRESET_KEYS[i]})` : `Preset ${i + 1}: empty`,
+      onclick: () => void deckPreset(d, i)});
+    b.setAttribute('aria-pressed', String(p.current === i));
+    return b;
+  }));
+}
+async function deckPreset(d, i) {
+  const l = hooks.linkFor(d.key), name = d.presets?.names[i];
+  if (!l || !d.presets) return;
+  if (!name) return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty. Keep one there in Perform › Effects › Presets › Manage…, or on the FM-1: EDIT + SELECT, then ${PRESET_KEYS[i]}.`);
+  if (d.throwing || d.filter) return say(`Deck ${NAMES[d.i]}: let go of the filter and throws first, then load the preset.`);
+  try {
+    if (await l.presetLoad(i) === 'empty') return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty.`);
+    /* its reverb as the deck's own (the effects come with the next polls, sliding: adoptLiveFx) */
+    const p = fromSlot(await l.presetGet(i));
+    if (p && d.rv) d.rv = unpackReverb(p.fx[17], p.fx[18]);
+    d.presets = {...d.presets, current: i}; d.presetsAt = now(); d.themeAt = 0;   /* (its colours read again) */
+    drawPresets(d);
+    say(`Deck ${NAMES[d.i]}: preset ${i + 1}, ${name}.`);
+  } catch (e) { say(`Deck ${NAMES[d.i]}: preset ${i + 1} not loaded: ${e.message}`); }
 }
 
 /* ---------- the mixer ---------- */
@@ -1484,8 +1530,9 @@ export function mountDj(box) {
     /* the warning strip: what the page couldn't set up on this deck's FM-1 (setWarn), kept across redraws */
     const warn = el('p', {className: 'dj-warn', role: 'status', hidden: true});
     const keyChip = el('span', {className: 'dj-key', hidden: true, role: 'status'});   /* the song's key (deckSong) */
+    const presets = el('div', {className: 'dj-presets', hidden: true, role: 'group', ariaLabel: `Deck ${NAMES[d.i]} presets`});   /* (drawPresets) */
     const box = el('section', {className: 'dj-deck', ariaLabel: `Deck ${NAMES[d.i]}`}, el('h4', {className: 'dj-deck-head'},
-      el('span', {className: 'dj-deck-id', title: `Deck ${NAMES[d.i]}`}, el('span', {className: 'sr-only', textContent: 'Deck '}), NAMES[d.i]), pick, chip, keyChip), warn, body);
+      el('span', {className: 'dj-deck-id', title: `Deck ${NAMES[d.i]}`}, el('span', {className: 'sr-only', textContent: 'Deck '}), NAMES[d.i]), pick, chip, keyChip), warn, presets, body);
     /* the crate (crate-ui.js): a card dropped here loads onto this deck; meanwhile a cover with its progress */
     const loadText = el('span'), loadBar = el('progress', {value: 0, max: 1, hidden: true});
     const loadEl = el('div', {className: 'dj-loading', hidden: true, role: 'status'}, loadText, loadBar);
@@ -1493,7 +1540,7 @@ export function mountDj(box) {
     box.ondragover = e => { if ([...(e.dataTransfer?.types || [])].includes(CRATE_TYPE)) { e.preventDefault(); box.classList.add('drop'); } };
     box.ondragleave = () => box.classList.remove('drop');
     box.ondrop = e => { box.classList.remove('drop'); dropOnDeck(e, d.i); };
-    d.ui = {pick, body, screen, box, warn, loadEl, loadText, loadBar, chip, keyChip};
+    d.ui = {pick, body, screen, box, warn, loadEl, loadText, loadBar, chip, keyChip, presets};
     return box;
   };
   const themePick = sel([['page', 'Page colours'], ...THEMES.map((n, i) => [String(i), n]).filter(([i]) => THEME_COLOURS[+i])], djTheme,

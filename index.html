@@ -8,7 +8,7 @@
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
 <link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
 <link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
-<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js">
+<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
 if (location.pathname.startsWith('/lsdj-burrito-dev/')) { document.documentElement.classList.add('devpage');
@@ -411,6 +411,10 @@ body.popped .dj-fx{padding:14px 18px;overflow:auto;scrollbar-width:thin}
 /* the song's key (dj-ui.js drawKey): a small label after the cartridge; dimmed when the notes don't say clearly */
 .dj-key{flex:none;padding:2px 7px;border-radius:4px;font:700 .72em var(--font-data);letter-spacing:.04em;color:var(--accent-ink);background:var(--accent);cursor:help}
 .dj-key.unsure{opacity:.55}
+.dj-presets{display:flex;gap:3px;margin:0 0 6px}
+.dj-preset{flex:1 1 0;min-width:0;padding:2px 0;font:700 .72em var(--font-data);border-radius:4px}
+.dj-preset.empty{opacity:.4}
+.dj-preset.on{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
 .dj-cart-chip{flex:0 1 auto;min-width:0;max-width:40%;padding:2px 7px;border-radius:4px 2px 4px 4px;background:#c9c6bd;color:#2a2925;
   font:400 10px/1.5 var(--font-name);letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dj-deck.drop,.dj-deck.loading{position:relative}
@@ -751,6 +755,26 @@ body.popped #pan-chans #fx-pages.all{--allfit:1}
 #fx-pages.all.fit .fx-chbox,#fx-pages.all.fit .fx-chname{display:block}
 #fx-help{max-width:min(720px,92vw);border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
 #fx-help::backdrop{background:rgb(0 0 0/.45)}
+/* presets (0.9.98-dev.6): a row in Master, Manage… */
+.preset-row{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;font-size:14px;margin:8px 0 0}
+.preset-label{font-weight:700;font-size:.8em;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);cursor:help}
+.preset-slots{display:flex;flex-wrap:wrap;gap:4px;min-width:0;flex:1 1 auto}
+.preset-slot{flex:1 1 0;min-width:4.5em;max-width:11em;padding:5px 7px;font-size:.85em;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.preset-slot b{color:var(--muted);margin-right:2px}
+.preset-slot.empty{opacity:.55}
+.preset-slot.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.preset-slot.on b{color:inherit}
+#preset-dlg{max-width:min(960px,96vw);border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
+#preset-dlg::backdrop{background:rgb(0 0 0/.45)}
+#preset-dlg p{font-size:14px}
+.preset-table{width:100%;border-collapse:collapse;font-size:14px}
+.preset-table th,.preset-table td{padding:5px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:middle}
+.preset-table th{white-space:nowrap}
+.preset-table tr.on th{color:var(--accent)}
+.preset-table .preset-name input{width:9.5em;font-family:inherit;text-transform:uppercase}
+.preset-acts{display:flex;flex-wrap:wrap;gap:4px}
+.preset-acts button{padding:4px 8px;font-size:.85em}
+@media (max-width:700px){.preset-table td.hint{display:none}}
 #fx-help p{font-size:14px}
 /* in its own window */
 body.popped{margin:0;height:100vh;display:flex;flex-direction:column;overflow:auto}
@@ -1098,6 +1122,12 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <button id="sync-play" type="button">▶ Play</button><button id="sync-stop" type="button">■ Stop</button></span>
 <span id="sync-note" class="hint" role="status"></span>
 </div>
+<div id="preset-row" class="preset-row" hidden>
+<span class="preset-label" title="On the FM-1: hold EDIT and press C4 … C5 to load one; hold EDIT, press SELECT, then a key to keep everything there">Presets</span>
+<div id="preset-slots" class="preset-slots" role="group" aria-label="Presets: click to load"></div>
+<button id="preset-manage" type="button" title="Keep the current state in a slot, name, export and import presets">Manage…</button>
+<span id="preset-note" class="hint" role="status"></span>
+</div>
 </div>
 
 <div class="panel" id="pan-chans" data-pop="chans" data-title="Channel effects" data-size="1100x520">
@@ -1116,6 +1146,13 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <aside id="tip-keybd" class="tip-card" role="note" hidden><p><b>First thing:</b> press HOME on the FM-1 for note mode to play LSDj from the keys. LSDj needs PROJECT › SYNC = KEYBD: the FM-1 sets it for you when SYNC is OFF (LSDj 9.3.9). Otherwise, set it on LSDj's PROJECT screen.</p><button id="tip-keybd-ok" type="button">Got it</button></aside>
 <nav id="stage-nav" class="stage-nav" aria-label="Perform panels"><button type="button" data-to="pan-screen">Screen</button><button type="button" data-to="pan-wire">Wiring</button><button type="button" data-to="pan-master">Master</button><button type="button" data-to="pan-chans">Channels</button></nav>
 
+<dialog id="preset-dlg" aria-labelledby="preset-dlg-title">
+<h2 id="preset-dlg-title">Presets</h2>
+<p class="hint">A preset holds everything you set on the FM-1: every effect (echo and reverb too), the settings, MIDI options, FX and light switches, and the custom colours. Autosave, screen rate, battery and preset glide stay as they are. On the FM-1: hold <b>EDIT</b> and press <b>C4 … C5</b> to load one; hold <b>EDIT</b>, press <b>SELECT</b>, then a key to keep everything in that slot. How fast the effects slide to a loaded preset: Settings › FX and lights › Preset glide.</p>
+<table class="preset-table"><tbody id="preset-table"></tbody></table>
+<p id="preset-dlg-status" class="hint" role="status"></p>
+<div class="row"><button id="preset-export-all" type="button">Export all</button><button id="preset-import-pick" type="button" title="A preset file goes into the first empty slot; a file of all 8 replaces every slot">Import file…</button><input id="preset-import" type="file" accept=".json" hidden><span class="stage-gap"></span><button id="preset-dlg-close" type="button" class="primary">Close</button></div>
+</dialog>
 <dialog id="fx-help">
 <h2>How the effects work</h2>
 <p>Changes go to the FM-1 straight away. <b>Keep on FM-1</b> stores them, as the SAVE button does. K1-K4 are the knobs that play each control on the FM-1; turn SELECT there to change pages (it stops at the first and last page: Settings › FX and lights can make it go round). A control the FM-1 changes lights up here.</p>

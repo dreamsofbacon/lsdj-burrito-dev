@@ -98,7 +98,7 @@ for (const f of FEATURES) for (let v = 0; v < f.choices.length; v++) {
 }
 assert.equal(FEATURES.find(f => f.key === 'fxTheme').choices.length, THEMES.length + 1);
 assert.throws(() => unpackFeatures(0x4D0001CE), /Not a feature/);
-assert.throws(() => unpackFeatures(0x460001CE | 1 << 20), /Unknown/);
+assert.throws(() => unpackFeatures(0x460001CE | 1 << 23), /Unknown/);   /* (bits 20-22: PRESET GLIDE, 0.9.98-dev.6) */
 // FM-1_989 SCREEN RATE: bits 18-19, 0 = 10 a second (older words read as before)
 assert.equal(FEATURE_DEFAULTS.screenRate, 0);
 assert.equal(unpackFeatures(0x460001CE | 3 << 18).screenRate, 3);

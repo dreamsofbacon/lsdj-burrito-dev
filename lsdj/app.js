@@ -18,6 +18,7 @@ import {startClock, startRelay, clampBpm} from './midiclock.js';
 import {mountDj, setDjHooks, djShown, djDevicesChanged, rememberSav, djLive} from './dj-ui.js';
 import {romFromSlot} from './lsdj-rom.js';
 import {ScreenMirror} from './screen.js';
+import {initPresets, presetsShown, readPresetList} from './presets-ui.js';
 import {popOut, onPopChange, isOut, docs, seen, anyVisible, visibleWindow} from './popout.js';
 import {startVirtual, virtualFirmware, mountVirtual, virtualPaused, pauseVirtual} from '../emulator/app.js';
 
@@ -28,8 +29,10 @@ const say = (id, text, cls = 'hint') => {
   const el = $(id); el.textContent = text; el.className = cls;
   if (id === 'device' && cls !== 'hint') logEvent(text);   /* the connection's news, kept to read later (conn-log.js) */
 };
+let hasPresets = false;   // the FM-1 in use has presets (INFO, 0.9.98-dev.6)
 const enable = on => {
   ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'].forEach(id => $(id).setAttribute('aria-disabled', on ? 'false' : 'true'));
+  presetsShown(on && hasPresets);
   document.dispatchEvent(new CustomEvent('device-state', {detail: {connected: on}}));   // lsdj/ui.js: layout
 };
 
@@ -69,7 +72,7 @@ async function connectOnce(input, output, how, fast) {
   try {
     const info = await link.info();
     if (info.protocol !== 1) throw new LinkError(`This page speaks link version 1; the FM-1 speaks ${info.protocol}. Update the page or the firmware.`);
-    fwId = info.firmware; fwNum = firmwareNumber(info.firmware);
+    fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets;
     muteOk = fwNum >= 977;   // MUTE_SET: FM-1_977 and newer
     say('device', (virtual ? `Connected to the virtual FM-1 (the emulator on this page, not a device): ` : `Connected over ${how}: `) +
       `${info.firmware} running ${info.title || 'a game'}` + (info.liveKnown ? '' : ' (live data needs LSDj 9.3.9)'), 'ok');
@@ -91,6 +94,7 @@ async function connectOnce(input, output, how, fast) {
     }
     buildFx(); buildSettings(); buildTheme(); enable(true);
     pageTheme();
+    if (hasPresets) await readPresetList(link).catch(() => {});   /* (the live poll reads it again now and then) */
     connected = true; lostAt = 0; missed = 0; activeAt = Date.now();
     if (dev) {
       current = dev; current.info = info;
@@ -1036,6 +1040,7 @@ async function tick() {
   if (dj && ++ticks % 2) return;
   try {
     if (!dj && ++ticks % 8 === 0) await followThemeSetting();
+    if (!dj && hasPresets && ticks % 8 === 4 && await readPresetList(link)) await reloadConfig();
     const l = (dj && djLive(curKey())) || await link.live();   /* a deck already polls this FM-1: its answer, not another LIVE on the link */
     { const key = liveKey(l); if (lastKey !== null && key !== lastKey) activeAt = Date.now(); lastKey = key; }   /* played: Follow stays */
     const live = unpackFx(l.fx);
@@ -1104,6 +1109,16 @@ document.querySelectorAll('#live-sec .panel[data-pop] .pop').forEach(b => {
 });
 onPopChange(() => { if (fx) refresh(); });
 $('fx-help-btn').onclick = () => $('fx-help').showModal();
+/* A preset brings settings, MIDI options, switches and colours with its effects (the live poll brings the
+   effects): read them again */
+async function reloadConfig() {
+  settings = unpackSettings(await link.settingsGet());
+  { const w = await link.midiGet(); midi = w === null ? null : unpackMidi(w); }
+  { const w = fwNum >= 979 ? await link.featGet() : null; features = w === null ? null : unpackFeatures(w); }
+  theme = await link.themeGet(); customTheme = theme.slice();
+  buildSettings(); buildTheme(); pageTheme();
+}
+initPresets({link: () => link, run, say, download, firmware: () => fwId, afterLoad: reloadConfig});
 $('fx-keep').onclick = () => run('fx-status', async () => { await link.fxSet(packFx(fx)); if (fx.reverb) await writeReverb(fx.reverb); await link.store(); say('fx-status', 'Kept on the FM-1.', 'ok'); });
 
 /* ---------- songs ---------- */
@@ -1236,7 +1251,8 @@ function djLinkFor(key) {
   return l;
 }
 setDjHooks({
-  devices: () => devices.map((d, i) => ({key: portKey(d), label: `FM-1 ${i + 1}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc})),
+  devices: () => devices.map((d, i) => ({key: portKey(d), label: `FM-1 ${i + 1}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc,
+    presets: !!d.info.presets})),
   linkFor: djLinkFor,
   outputFor: key => devices.find(x => portKey(x) === key)?.output || null,
   access: () => ports?.access || null,
@@ -1463,7 +1479,8 @@ function buildSettings() {
   if (midi) selects(mbox, MIDI_SETTINGS, midi);
   const fbox = $('feat-form'); fbox.replaceChildren();
   $('feat-sec').hidden = !features;
-  if (features) selects(fbox, FEATURES.filter(f => f.key !== 'fxTheme' && f.key !== 'autosave' && f.key !== 'screenRate'), features);
+  if (features) selects(fbox, FEATURES.filter(f => f.key !== 'fxTheme' && f.key !== 'autosave' && f.key !== 'screenRate' &&
+    (f.key !== 'presetGlide' || hasPresets)), features);
 }
 /* The CC map: per channel, then the shared ones */
 {
