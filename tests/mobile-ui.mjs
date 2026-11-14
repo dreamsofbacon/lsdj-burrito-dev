@@ -3,7 +3,8 @@
 // with two fake FM-1s (tests/dj-ui.mjs djDemo). In Perform › Effects and DJ, and in Settings: nothing wider than the
 // screen (a phone would zoom the whole page out for it), no button with its text cut, buttons big enough to tap;
 // DJ upright: the turn-sideways card instead of the console; DJ on its side: both decks' PLAY and SYNC and the
-// crossfader on screen with no scrolling, ⋯ opening and closing the rest.
+// crossfader on screen with no scrolling, ⋯ opening and closing the rest. Compact: every effect in one grid, no
+// screen or wiring, its knobs the pages' own (a change in one shows in the other), at most two screens tall upright.
 const assert = (v, message) => { if (!v) throw Error(message); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message, ms = 15000) {
@@ -54,6 +55,23 @@ function problems({d, win}, minTall) {
 const onScreen = ({d, win}, sel) => [...d.querySelectorAll(sel)].filter(e => e.offsetParent).length > 0 &&
   [...d.querySelectorAll(sel)].filter(e => e.offsetParent).every(e => { const r = e.getBoundingClientRect(); return r.bottom <= win.innerHeight + 1 && r.right <= d.documentElement.clientWidth + 1 && r.top >= 0; });
 const mode = (p, m) => p.d.querySelector(`#stage-mode [data-mode="${m}"]`).click();
+/* Perform › Compact: every page's knobs in the grid, nothing else of the effects; one change shows in both */
+function compact(p, w, h, minTall) {
+  const {d, win} = p, grid = d.getElementById('pan-grid');
+  assert(grid.offsetParent && !d.getElementById('pan-chans').offsetParent && !d.getElementById('pan-wire').offsetParent && !d.getElementById('pan-screen').offsetParent,
+    `${w}×${h} Compact: the grid alone`);
+  const keys = new Set([...d.querySelectorAll('#fx-pages .fx-ctl, #fx-master-pages .fx-ctl')].map(c => c.dataset.key));
+  const here = new Set([...grid.querySelectorAll('.fx-ctl')].map(c => c.dataset.key));
+  const missing = [...keys].filter(k => !here.has(k));
+  assert(!missing.length, `${w}×${h} Compact: missing ${missing.join(', ')}`);
+  assert(grid.querySelectorAll('#fxg-head [data-mute]').length === 4, 'Compact: the four channels to mute');
+  const bad = problems(p, minTall); assert(!bad, `${w}×${h} Compact: ${bad}`);
+  if (h > w) assert(d.documentElement.scrollHeight < 2 * h, `${w}×${h} Compact: ${d.documentElement.scrollHeight} px tall, more than two screens`);
+  const r = grid.querySelector('.fx-ctl[data-key="cutoff"][data-ch="1"] input'), page = d.querySelector('#fx-pages .fx-ctl[data-key="cutoff"][data-ch="1"] input');
+  r.value = 90; r.dispatchEvent(new win.Event('input'));
+  assert(page.value === '90', `Compact: PU2 cutoff set in the grid shows on the FILTER page (${page.value})`);
+  r.value = 0; r.dispatchEvent(new win.Event('input'));
+}
 
 export async function runMobileUiTests() {
   assert(['localhost', '127.0.0.1'].includes(location.hostname), 'Use a fresh local preview, never a real device');
@@ -66,6 +84,9 @@ export async function runMobileUiTests() {
       mode(p, 'dj'); await sleep(300);
       assert(onScreen(p, '.dj-rotate') && !p.d.getElementById('dj-root').offsetParent, `${w}×${h} DJ upright: the turn-sideways card, not the console`);
       bad = problems(p, 34); assert(!bad, `${w}×${h} DJ upright: ${bad}`);
+      mode(p, 'grid'); await sleep(300);
+      compact(p, w, h, 34);
+      mode(p, 'fx'); await sleep(200);
       p.win.location.hash = '#settings-sec'; await sleep(300);
       bad = problems(p, 30); assert(!bad, `${w}×${h} Settings: ${bad}`);
       done.push(`${w}×${h}`);
@@ -89,8 +110,11 @@ export async function runMobileUiTests() {
       assert(!tpads(), '⋯ again: closed');
       mode(p, 'fx'); await sleep(300);
       bad = problems(p, 34); assert(!bad, `${w}×${h} Effects: ${bad}`);
+      mode(p, 'grid'); await sleep(300);
+      compact(p, w, h, 32);
+      mode(p, 'fx');
       done.push(`${w}×${h}`);
     } finally { p.f.remove(); }
   }
-  return `PASS phones: ${done.join(', ')}: nothing wider than the screen, no cut text, tappable buttons; DJ upright the turn-sideways card; DJ on its side both decks and the crossfader on screen, ⋯ opens and closes the rest`;
+  return `PASS phones: ${done.join(', ')}: nothing wider than the screen, no cut text, tappable buttons; DJ upright the turn-sideways card; DJ on its side both decks and the crossfader on screen, ⋯ opens and closes the rest; Compact every knob in one grid`;
 }

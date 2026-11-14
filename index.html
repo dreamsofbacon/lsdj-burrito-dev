@@ -12,6 +12,7 @@
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
 if (location.pathname.startsWith('/lsdj-burrito-dev/')) { document.documentElement.classList.add('devpage');
+  try { if (localStorage.getItem('burrito.devBannerOff') === '1') document.documentElement.classList.add('devbanner-off'); } catch {}
   document.querySelector('link[rel=manifest]').href = 'manifest-dev.webmanifest'; document.title = 'DEV · ' + document.title; }</script>
 <script>/* the last connected FM-1's colours (lsdj/page-theme.js), before the page draws */
 try { const v = JSON.parse(localStorage.getItem('burrito.pageColours'));
@@ -35,7 +36,10 @@ a{color:var(--accent)}
 /* the dev page's banner (html.devpage: the script in the head) */
 .dev-banner{display:none;background:#ffd23f;color:#1a1a1a;font:600 13px/1.4 var(--font-body);padding:6px 16px;text-align:center}
 .dev-banner a{color:#1a1a1a}
-html.devpage .dev-banner{display:block}
+html.devpage .dev-banner{display:flex;align-items:center;justify-content:center;gap:10px}
+html.devpage.devbanner-off .dev-banner{display:none}
+.dev-banner-x{flex:none;background:none;border:0;color:#1a1a1a;font:700 18px/1 var(--font-body);padding:4px 8px;margin:-4px -8px -4px 0;cursor:pointer;border-radius:6px}
+.dev-banner-x:hover,.dev-banner-x:focus-visible{background:#0002}
 /* top bar */
 .top{position:sticky;top:0;z-index:5;background:var(--top);color:var(--top-ink)}
 .top-in{max-width:880px;margin:0 auto;padding:8px 16px;display:flex;gap:6px 14px;align-items:center;flex-wrap:wrap}
@@ -176,6 +180,38 @@ table.fx th,table.fx td{padding:3px 6px;border-bottom:1px solid var(--line);text
 .fx-row.idle>.fx-name,.fx-row.idle>.knob{opacity:.45}
 .fx-card.idle>h3{opacity:.5}
 #fx-pagebar button.idle:not(.on){opacity:.5}
+/* Perform › Compact (app.js buildGrid): every effect at once. Each page a block: its name and the channels over its
+   rows, a row a knob, a cell a channel (the shared pages: their knobs side by side). The blocks flow into columns as
+   the room allows; on a phone, one column, no screen or wiring. */
+#pan-grid{display:none}
+body.fxgrid #pan-grid{display:block}
+body.fxgrid #live-sec>#pan-wire,body.fxgrid #live-sec>#pan-chans,body.fxgrid #fx-master,body.fxgrid #stage-nav{display:none}
+.fxg{--fxgc:minmax(4.2em,.85fr) repeat(4,minmax(0,1fr));columns:330px;column-gap:10px}
+.fxg-head{column-span:all;margin:0 0 6px;display:grid;grid-template-columns:var(--fxgc);gap:4px;align-items:center;max-width:620px}
+.fxg-head .fxg-name{font-size:12px;color:var(--muted)}
+.fxg-head button{min-height:38px;padding:4px 2px;font-weight:600;font-size:14px}
+.fxg-head button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.fxg-head button:not(.on){text-decoration:line-through;color:var(--muted)}
+.fxg-head button.cursor{box-shadow:0 0 0 2px var(--hi)}
+.fxg-sec{border:1px solid var(--line);border-radius:8px;padding:2px 4px 3px;background:var(--card2);min-width:0;break-inside:avoid;margin:0 0 6px}
+.fxg-sec.fm1{border-color:var(--hi);box-shadow:0 0 0 1px var(--hi) inset}
+.fxg .fx-row.fxg-row{display:grid;grid-template-columns:var(--fxgc);gap:3px;align-items:center;padding:1px 0}
+.fxg-label{font:600 10px/14px var(--font-data);color:var(--muted);letter-spacing:.03em}
+.fxg-label>span{text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fxg-label>b{color:var(--ink);font-size:11px;letter-spacing:.06em;text-align:left}
+.fxg-sec.fm1 .fxg-label>b::after{content:" ●";color:var(--hi)}
+.fxg-name{font-size:12px;line-height:1.1;min-width:0;overflow-wrap:anywhere}
+.fxg .fx-ctl{grid-column:auto;flex-direction:column;align-items:stretch;justify-content:center;gap:0;min-height:36px;padding:0 2px;border-radius:6px}
+.fxg .fx-ctl.wide{grid-column:2/-1}
+.fxg .fx-ctl output{order:-1;min-width:0;text-align:center;font:10.5px/12px var(--font-data);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fxg .fx-ctl input[type=range]{min-width:0;width:100%;height:24px;margin:0}
+.fxg .fx-ctl select{min-height:34px;padding:2px 0 2px 3px;font-size:12px;width:100%}
+.fxg-tog{min-height:34px;padding:2px 3px;font-size:12px;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fxg-tog.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.fxg-tog+output{display:none}
+.fxg .fx-ctl.cursor{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.fxg .fx-ctl.muted{filter:grayscale(1);opacity:.45}
+.fxg .fx-row.idle>.fxg-name{opacity:.5}
 /* Perform's DJ layout (lsdj/dj-ui.js): Effects | DJ switches the panels */
 .stage-mode{display:inline-flex;flex:0 0 auto;width:auto}
 .stage-mode button{padding:4px 12px;flex:0 0 auto}
@@ -853,6 +889,8 @@ body:not(.connected) .pop-body{opacity:.5;pointer-events:none}
   body.perform.pop-screen.pop-wire #live-sec{grid-template-areas:"head" "master" "chans" "chans"}
   body.perform.pop-master.pop-chans #live-sec{grid-template-areas:"head" "screen" "screen" "wire"}
   body.perform.pop-master #live-sec{grid-template-areas:"head head" "screen chans" "screen chans" "wire chans"}
+  body.perform.fxgrid #live-sec{grid-template-columns:calc(var(--sh)*.6) minmax(0,1fr);grid-template-areas:"head head" "screen grid" "screen grid" "master grid"}
+  body.perform.fxgrid #pan-grid{grid-area:grid;overflow:auto;scrollbar-width:thin}
   body.perform.pop-chans #live-sec{grid-template-areas:"head head" "screen master" "screen master" "wire master"}
   body.perform.pop-master.pop-chans #pan-screen canvas{height:calc(var(--sh)*.62);width:auto;margin:auto}
 }
@@ -964,10 +1002,10 @@ select{max-width:100%}
 /* Perform's head on an upright phone: title and Keep / ? / Setup; then the FM-1 picker, Follow, Effects | DJ; then the
    badges (the second line goes when there's one FM-1 and no picker) */
 @media (max-width:700px){
-  body.perform .stage-head{grid-template-areas:"t k h s" "p p f m" "b b b b"}
+  body.perform .stage-head{grid-template-areas:"t k h s" "p p p f" "m m m m" "b b b b"}
   body.perform #stage-pick{grid-area:p;min-width:0;width:100%;max-width:100%;padding:8px 10px;font-size:14px;text-overflow:ellipsis}
   body.perform #stage-follow{grid-area:f}
-  body.perform #stage-mode{grid-area:m;justify-self:end}
+  body.perform #stage-mode{grid-area:m}
   body.perform #stage-mode button{padding:8px 12px;font-size:14px}
   body.perform .preset-slot{min-height:40px;flex:1 0 calc(25% - 4px);max-width:none}
   body.perform #preset-manage{min-height:40px}
@@ -981,6 +1019,8 @@ select{max-width:100%}
 }
 /* the DJ layout on an upright phone: a card asking to turn it (the decks keep running) */
 @media (max-width:700px) and (orientation:portrait){
+  body.perform #stage-mode{width:100%}
+  body.perform #stage-mode button{flex:1}
   body.dj .dj-rotate{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:28px 18px;color:var(--ink)}
   body.dj .dj-rotate svg{color:var(--accent);animation:dj-turn 2.4s ease-in-out infinite}
   body.dj .dj-rotate p{margin:0;max-width:30em}
@@ -989,6 +1029,19 @@ select{max-width:100%}
 }
 @keyframes dj-turn{0%,30%{transform:none}60%,100%{transform:rotate(-90deg)}}
 @media (prefers-reduced-motion:reduce){.dj-rotate svg{animation:none}}
+/* Compact on a phone: the grid alone (the screen and wiring stay in Effects), the presets and clock under it */
+@media (max-width:700px), (max-width:960px) and (max-height:500px) and (orientation:landscape){
+  body.perform.fxgrid #live-sec>#pan-screen,body.perform.fxgrid #pan-grid>.panel-head{display:none}
+  body.perform.fxgrid #pan-grid{padding:6px 4px}
+  body.perform.fxgrid main{padding-bottom:env(safe-area-inset-bottom)}
+}
+@media (max-width:960px) and (max-height:500px) and (orientation:landscape){
+  body.perform.fxgrid #live-sec{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "grid" "master"}
+  body.perform.fxgrid #pan-grid{grid-area:grid}
+  .fxg{columns:300px}
+  .fxg .fx-ctl{min-height:32px}
+  .fxg .fx-ctl input[type=range]{height:22px}
+}
 /* a phone on its side: Perform's head on one line, the picker giving way first */
 @media (max-width:960px) and (max-height:500px) and (orientation:landscape){
   body.perform .stage-head{gap:6px}
@@ -1139,7 +1192,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 </style>
 </head>
 <body>
-<div class="dev-banner" role="note">TEST BUILD: the LSDJ Burrito dev page. Firmware and features here are being tested and may not work. The finished version is on <a href="https://dreamsofbacon.github.io/lsdj-burrito/">the LSDJ Burrito page</a>.</div>
+<div class="dev-banner" role="note"><span>TEST BUILD: the LSDJ Burrito dev page. Firmware and features here are being tested and may not work. The finished version is on <a href="https://dreamsofbacon.github.io/lsdj-burrito/">the LSDJ Burrito page</a>.</span><button type="button" class="dev-banner-x" aria-label="Hide this banner" title="Hide this banner (in this browser)" onclick="document.documentElement.classList.add('devbanner-off');try{localStorage.setItem('burrito.devBannerOff','1')}catch{}">✕</button></div>
 <header class="top"><div class="top-in">
 <a class="brand" href="#home">LSDJ Burrito<small>by Dreamy_bacon</small></a>
 <nav class="page-nav" aria-label="Main">
@@ -1203,13 +1256,18 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <select id="stage-pick" hidden aria-label="The FM-1 to use"></select>
 <button id="stage-follow" class="follow" type="button" aria-pressed="false" hidden title="Switch by itself to the FM-1 being played">Follow</button>
 <span id="live-badges"></span>
-<div id="stage-mode" class="seg stage-mode" role="radiogroup" aria-label="Perform layout"><button type="button" role="radio" data-mode="fx">Effects</button><button type="button" role="radio" data-mode="dj">DJ</button></div>
+<div id="stage-mode" class="seg stage-mode" role="radiogroup" aria-label="Perform layout"><button type="button" role="radio" data-mode="fx">Effects</button><button type="button" role="radio" data-mode="grid" title="Every effect at once: a row a knob, a column a channel">Compact</button><button type="button" role="radio" data-mode="dj">DJ</button></div>
 <span class="stage-gap"></span>
 <span id="fx-status" class="hint" role="status"></span>
 <button id="fx-keep" type="button" title="Store the effects on the FM-1, as its SAVE button does">Keep on FM-1</button>
 <button id="fx-help-btn" type="button" aria-haspopup="dialog" title="How the effects work">?</button>
 <a class="button-link" href="#songs-sec" title="Songs, colours and settings">Setup</a>
 <button id="stage-full" type="button" aria-pressed="false">Full screen</button>
+</div>
+
+<div class="panel" id="pan-grid">
+<div class="panel-head"><h3>All effects <span class="hint">· a row a knob, a column a channel; tap a channel's name to mute it</span></h3></div>
+<div id="fxg" class="fxg"></div>
 </div>
 
 <div class="panel" id="pan-screen" data-pop="screen" data-title="FM-1 screen" data-size="720x680">

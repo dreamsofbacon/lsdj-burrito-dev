@@ -703,14 +703,28 @@ function changed() {
   }, 80);
 }
 /* one control for one channel (ch: 0-3; a shared control uses 0) */
-function control(key, ch) {
+function control(key, ch, cell = false) {
   const p = PARAM[key], wrap = document.createElement('div');
   wrap.className = 'fx-ctl'; wrap.dataset.key = key;
   if (perChannel(key)) { wrap.dataset.ch = ch; wrap.dataset.chn = CHANNELS[ch]; }
   const out = document.createElement('output');
   const focused = el => el.ownerDocument.activeElement === el;   // the panel may be in its own window
   let input, set;
-  if (p.choices && p.choices.length <= 3) {          // a toggle: one button per choice
+  if (cell && p.choices && p.choices.length <= 2) {  // Compact: one button showing the choice, a tap the other
+    input = document.createElement('button'); input.type = 'button'; input.className = 'fxg-tog';
+    if (p.live && !muteOk) input.disabled = true;
+    const onOff = p.choices[0] === 'Off';
+    input.onclick = () => {
+      const i = (paramGet(fx, key, ch) + 1) % p.choices.length;
+      if (p.live) { fx.freeze = i; set(i); sendMute(i); refresh(); return; }
+      paramSet(fx, key, ch, i); set(i); changed(); refresh();
+    };
+    set = v => {
+      input.textContent = p.choices[v] ?? '?';
+      input.classList.toggle('on', onOff && v > 0);
+      if (onOff) input.setAttribute('aria-pressed', String(v > 0));
+    };
+  } else if (p.choices && p.choices.length <= 3 && !cell) {   // a toggle: one button per choice
     input = document.createElement('div'); input.className = 'seg'; input.setAttribute('role', 'radiogroup');
     const btns = p.choices.map((name, i) => {
       const b = document.createElement('button'); b.type = 'button'; b.textContent = name; b.setAttribute('role', 'radio');
@@ -795,6 +809,7 @@ function buildFx() {
     if (perCh) channelBlocks(card, allPages);
     (isMasterPage(fx, i, fwNum) ? masterBox : box).append(card);
   });
+  buildGrid();
   const mutes = $('fx-mutes'); mutes.replaceChildren();
   CHANNELS.forEach((name, n) => {
     const b = document.createElement('button'); b.type = 'button'; b.dataset.mute = n; b.textContent = name;
@@ -834,6 +849,46 @@ function buildFx() {
     head.append(d);
   });
   refresh();
+}
+/* Perform › Compact: every effect at once (index.html .fxg). A block a page: a channel page its rows, a cell a
+   channel; a shared page its knobs side by side. A knob on two pages shows once. Made of the same controls as the
+   pages (control()), so values, dimming, the cursor and mutes show here as there. Tap a channel's name: mute.
+   Built only while Compact is shown (taken down again on leaving it). */
+function buildGrid() {
+  const box = $('fxg'); if (!box) return;
+  for (let i = controls.length; i--;) if (box.contains(controls[i].wrap)) controls.splice(i, 1);
+  box.replaceChildren();
+  if (!fxGrid || !fx) return;
+  const div = (cls, ...kids) => { const d = document.createElement('div'); d.className = cls; d.append(...kids); return d; };
+  const span = (cls, text, tag = 'span') => { const s = document.createElement(tag); if (cls) s.className = cls; s.textContent = text; return s; };
+  const head = div('fxg-head', span('fxg-name', 'Playing'));
+  head.id = 'fxg-head';
+  CHANNELS.forEach((name, n) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.mute = n; b.dataset.ch = n; b.textContent = name;
+    b.disabled = !muteOk; b.title = muteOk ? `Mute or play ${name}` : 'Muting from this page needs FM-1_977 or newer';
+    b.onclick = () => { mute ^= 1 << n; sendMute(); refresh(); };
+    head.append(b);
+  });
+  box.append(head);
+  const seen = new Set();
+  pagesForFx(fx, fwNum).forEach((pg, i) => {
+    if (pg.v2 && !fx.v2) return;
+    if (pg.rv && !fx.reverb) return;
+    const knobs = pg.knobs.filter(s => s && !(s[0] === 'rvch' && !fx.reverb?.rvSend) && !seen.has(s[1]));
+    if (!knobs.length) return;
+    knobs.forEach(s => seen.add(s[1]));
+    const sec = div('fxg-sec'); sec.dataset.page = i;
+    const per = knobs.filter(s => perChannel(s[1])), shared = knobs.filter(s => !perChannel(s[1]));
+    if (per.length) {
+      sec.append(div('fx-row fxg-row fxg-label', span('', pg.name, 'b'), ...CHANNELS.map(n => span('', n))));
+      per.forEach(([, key]) => sec.append(div('fx-row fxg-row', span('fxg-name', PARAM[key].name), ...CHANNELS.map((n, c) => control(key, c, true)))));
+      shared.forEach(([, key]) => { const w = control(key, 0, true); w.classList.add('wide'); sec.append(div('fx-row fxg-row', span('fxg-name', PARAM[key].name), w)); });
+    } else {
+      sec.append(div('fx-row fxg-row fxg-label', span('', pg.name, 'b'), ...shared.map(([, key]) => span('', PARAM[key].name))));
+      sec.append(div('fx-row fxg-row', span('fxg-name', 'all'), ...shared.map(([, key]) => control(key, 0, true))));
+    }
+    box.append(sec);
+  });
 }
 /* All on a screen of fixed size (CSS --allfit: Perform's stage, the panel in its own window): the pages fill the
    Channels panel, 2 x 2 (a row of four when it is very wide, a column when very tall), and the text is sized, as
@@ -911,6 +966,7 @@ function markIdle() {
     card.classList.toggle('idle', pageOn.get(card.dataset.page) === false);
   });
   $$('#fx-pagebar [data-page]').forEach(b => b.classList.toggle('idle', pageOn.get(b.dataset.page) === false));
+  $$('#fxg .fxg-row:not(.fxg-label)').forEach(r => { const c = [...r.querySelectorAll('.fx-ctl')]; r.classList.toggle('idle', c.length > 0 && c.every(w => w.classList.contains('idle'))); });
 }
 function refresh(hot = []) {
   if (!fx) return;
@@ -929,7 +985,7 @@ function refresh(hot = []) {
     b.classList.toggle('on', !allPages && +b.dataset.page === want);
     b.classList.toggle('fm1', !!lastLive && +b.dataset.page === onFm1);
   });
-  $$('#fx-mutes [data-mute]').forEach(b => {
+  $$('#fx-mutes [data-mute], #fxg-head [data-mute]').forEach(b => {
     const playing = !((mute >> +b.dataset.mute) & 1);
     b.classList.toggle('on', playing); b.setAttribute('aria-pressed', String(playing));
   });
@@ -940,7 +996,7 @@ function refresh(hot = []) {
     d.querySelector('small').textContent = [channelSummary(fx, n), ...tags].join(' · ');
   });
   /* the column under the FM-1's cursor marked; a muted channel's column grey (still adjustable), as the FM-1 does */
-  $$('#pan-chans [data-ch], .fx-ctl.chan-line:not(.dj-ctl)').forEach(el => {
+  $$('#pan-chans [data-ch], #pan-grid [data-ch], .fx-ctl.chan-line:not(.dj-ctl)').forEach(el => {
     const n = +el.dataset.ch;
     el.classList.toggle('cursor', !!lastLive && n === cursorCh);
     el.classList.toggle('muted', !!((mute >> n) & 1));
@@ -951,6 +1007,7 @@ function refresh(hot = []) {
     `(Master${muteOk ? '' : ' needs FM-1_977'}, or C4-F4 on the FM-1's MASTER page).`;
   drawWiring();
   $$('#live-sec .fx-card:not(.dj-card), .pop-body .fx-card:not(.dj-card)').forEach(card => card.classList.toggle('fm1', !!lastLive && +card.dataset.page === onFm1));
+  $$('#fxg .fxg-sec').forEach(sec => sec.classList.toggle('fm1', !!lastLive && +sec.dataset.page === onFm1));
   hot.forEach(key => {
     $$(`.fx-ctl[data-key="${key}"]:not(.dj-ctl)`).forEach(el => {
       const row = el.closest('.fx-row'); row.classList.remove('hot'); void row.offsetWidth; row.classList.add('hot');
@@ -1303,18 +1360,23 @@ setCrateHooks({
   info: key => crateLink(key).info(),
   volumeFull: async key => { try { await djLinkFor(key)?.volumeSet(127); } catch { /* older firmware, or gone: full at its next start */ } },
 }, {});
-let stageMode = 'fx';
-try { if (localStorage.getItem('lsdj-burrito-stage') === 'dj') stageMode = 'dj'; } catch { /* Effects */ }
+/* Effects | Compact | DJ. Compact is the Effects layout (stageMode 'fx') with every effect in one grid (body.fxgrid) */
+let stageMode = 'fx', fxGrid = false;
+try { const s = localStorage.getItem('lsdj-burrito-stage'); if (s === 'dj') stageMode = 'dj'; else if (s === 'grid') fxGrid = true; } catch { /* Effects */ }
 function setStageMode(m) {
   stageMode = m === 'dj' ? 'dj' : 'fx';
-  try { localStorage.setItem('lsdj-burrito-stage', stageMode); } catch { /* this visit only */ }
+  fxGrid = m === 'grid';
+  const shown = fxGrid ? 'grid' : stageMode;
+  try { localStorage.setItem('lsdj-burrito-stage', shown); } catch { /* this visit only */ }
   document.body.classList.toggle('dj', stageMode === 'dj');
-  $$('#stage-mode [data-mode]').forEach(b => { const on = b.dataset.mode === stageMode; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+  document.body.classList.toggle('fxgrid', fxGrid);
+  buildGrid(); refresh();
+  $$('#stage-mode [data-mode]').forEach(b => { const on = b.dataset.mode === shown; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
   djShown(stageMode === 'dj');
   queueFit();
 }
 $$('#stage-mode [data-mode]').forEach(b => { b.onclick = () => setStageMode(b.dataset.mode); });
-setStageMode(stageMode);
+setStageMode(fxGrid ? 'grid' : stageMode);
 /* The three exports (each its own file): songs, the installed LSDj (read back from the FM-1:
    FM-1_974 and newer web-installed builds), the effects setup. Nothing is written to the FM-1. */
 async function songsFile() {
