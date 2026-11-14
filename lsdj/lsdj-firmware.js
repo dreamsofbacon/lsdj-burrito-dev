@@ -26,7 +26,7 @@ export async function prepareLsdjFirmware(rom, keepKits, template, metadata, {ve
   const info = await identifyRom(rom, versions);
   if (!experimental) throw Error('Explicit experimental consent is required. This template is not hardware-validated.');
   if (metadata.lsdj_slot !== 1 || metadata.generic_rom !== true || metadata.experimental !== true ||
-      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== '0.9.98-dev.5' ||
+      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== '0.9.98-dev.6' ||
       metadata.usb_updater !== true || metadata.usb_protocol !== 'fm1-ota-v1')
     throw Error('Unsupported LSDj firmware template.');
   if (await sha256hex(template) !== metadata.sha256) throw Error('Firmware template integrity check failed.');
