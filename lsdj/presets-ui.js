@@ -65,7 +65,7 @@ function drawRow() {
     const name = list?.names[i] ?? null, b = document.createElement('button');
     b.type = 'button'; b.className = 'preset-slot' + (name ? '' : ' empty') + (list?.current === i ? ' on' : '');
     b.innerHTML = `<b>${i + 1}</b> <span></span>`; b.lastChild.textContent = name || '—';
-    b.title = name ? `Load ${name} (on the FM-1: hold EDIT, press ${KEYS[i]})` : `Slot ${i + 1} is empty. Keep the FM-1's current state here: Manage…, or on the FM-1 hold EDIT, press SELECT, then ${KEYS[i]}.`;
+    b.title = name ? `Load ${name} (on the FM-1: hold EDIT, press ${KEYS[i]})` : `Slot ${i + 1} is empty. Keep the FM-1's current state here: Manage…, or on the FM-1: EDIT + SELECT opens the list, then SELECT, then ${KEYS[i]}.`;
     b.setAttribute('aria-pressed', String(list?.current === i));
     b.onclick = () => load(i);
     box.append(b);
@@ -73,7 +73,7 @@ function drawRow() {
 }
 function load(i) {
   const name = list?.names[i];
-  if (!name) return deps.say('preset-note', `Slot ${i + 1} is empty. Keep a preset there with Manage…, or on the FM-1: hold EDIT, press SELECT, then ${KEYS[i]}.`, 'warn');
+  if (!name) return deps.say('preset-note', `Slot ${i + 1} is empty. Keep a preset there with Manage…, or on the FM-1: EDIT + SELECT opens the list, then SELECT, then ${KEYS[i]}.`, 'warn');
   queued('preset-note', async () => {
     const l = deps.link();
     if (await l.presetLoad(i) === 'empty') throw Error(`Slot ${i + 1} is empty on the FM-1.`);

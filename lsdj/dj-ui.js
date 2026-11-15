@@ -845,7 +845,7 @@ function drawPresets(d) {
 async function deckPreset(d, i) {
   const l = hooks.linkFor(d.key), name = d.presets?.names[i];
   if (!l || !d.presets) return;
-  if (!name) return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty. Keep one there in Perform › Effects › Presets › Manage…, or on the FM-1: EDIT + SELECT, then ${PRESET_KEYS[i]}.`);
+  if (!name) return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty. Keep one there in Perform › Effects › Presets › Manage…, or on the FM-1: EDIT + SELECT opens the list, then SELECT, then ${PRESET_KEYS[i]}.`);
   if (d.throwing || d.filter) return say(`Deck ${NAMES[d.i]}: let go of the filter and throws first, then load the preset.`);
   try {
     if (await l.presetLoad(i) === 'empty') return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty.`);
