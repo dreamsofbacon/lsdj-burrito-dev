@@ -11,6 +11,8 @@ async function protectedHash(app, offset, capacity) {
   return sha256hex(bytes);
 }
 
+const RELEASE = '0.9.98-dev.9';   /* the template this page was made with (template.json release) */
+
 export async function loadTemplate(fetcher = fetch) {
   const get = async (path, json = false) => {
     const r = await fetcher(path, {cache: 'no-store', signal: AbortSignal.timeout(20000)});
@@ -25,8 +27,13 @@ export async function loadTemplate(fetcher = fetch) {
 export async function prepareLsdjFirmware(rom, keepKits, template, metadata, {versions = [], experimental = false} = {}) {
   const info = await identifyRom(rom, versions);
   if (!experimental) throw Error('Explicit experimental consent is required. This template is not hardware-validated.');
+  /* the page's code and the template from different versions (a browser that kept the old page after an update;
+     Colin's dev.9 update): say so, rather than "Unsupported" */
+  if (metadata.product === 'FM-1_537000998' && typeof metadata.release === 'string' && metadata.release !== RELEASE)
+    throw Error(`This page (${RELEASE}) and its firmware template (${metadata.release}) are from different versions: ` +
+      'reload the page (Ctrl+Shift+R; in the installed app, close it and open it again). Nothing was prepared.');
   if (metadata.lsdj_slot !== 1 || metadata.generic_rom !== true || metadata.experimental !== true ||
-      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== '0.9.98-dev.9' ||
+      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== RELEASE ||
       metadata.usb_updater !== true || metadata.usb_protocol !== 'fm1-ota-v1')
     throw Error('Unsupported LSDj firmware template.');
   if (await sha256hex(template) !== metadata.sha256) throw Error('Firmware template integrity check failed.');
