@@ -169,7 +169,7 @@ export async function loadOnto(id, i, slot = null) {
       swap: 'Changing only its LSDj (songs saved first): keep the cable in'};
     let step = '', restarted = false;
     logEvent(`Deck ${d.name}: installing "${item.name}" (${pkg.product}) on ${target.output}.`);
-    const r = await installOn(app.access(), checkPackage(pkg.bytes), {target, avoid, slot: pkg.slot,
+    const r = await installOn(app.access(), checkPackage(pkg.bytes), {target, avoid, slot: pkg.slot, build: pkg.build,
       log: t => logEvent(`Deck ${d.name}: ${t}`),
       onStep: s => { step = s; if (s === 'restart' || s === 'loader') restarted = true; logEvent(`Deck ${d.name}: ${names[s] || s}.`);
         show(s.startsWith('replug') ? names[s] : `${names[s]}…`); },

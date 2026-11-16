@@ -11,7 +11,7 @@ const log = (text) => { const el = $('fw-log'); el.textContent += `${new Date().
 let pkg = null, fileName = '', busy = false, wake = null;
 let selection = 0, generated = false, preparing = false;
 let firmwareBytes = null;
-let swapSlot = null;   /* a prepared firmware's LSDj slot: the fast swap when the FM-1 already runs this firmware */
+let swapSlot = null, swapBuild = null;   /* a prepared firmware's LSDj slot and build ID: the fast swap when the FM-1 runs this very build */
 export const getFirmwareSelection = () => pkg && !preparing ? {name: fileName, product: pkg.product} : null;
 export function usbMidiUnavailable() {
   if (!globalThis.isSecureContext) return 'USB MIDI requires HTTPS or localhost.';
@@ -45,7 +45,7 @@ export let beforeInstall = async () => {};   // the page closes its own link to 
 export function setBeforeInstall(f) { beforeInstall = f; }
 
 function clearFirmware() {
-  ++selection; pkg = null; generated = false; firmwareBytes = null; fileName = ''; swapSlot = null;
+  ++selection; pkg = null; generated = false; firmwareBytes = null; fileName = ''; swapSlot = null; swapBuild = null;
   $('fw-install').disabled = true; $('fw-info').textContent = '';
   $('fw-progress').hidden = true;
   updateControls();
@@ -60,11 +60,11 @@ export function setPreparingFirmware(value) {
   preparing = value;
   updateControls();
 }
-export function selectFirmware(bytes, name, fromRom = false, slot = null) {
+export function selectFirmware(bytes, name, fromRom = false, slot = null, build = null) {
   if (busy) throw new InstallError('An installation is already running.');
   const checked = checkPackage(bytes);
   clearFirmware();
-  pkg = checked; fileName = name; generated = fromRom; firmwareBytes = bytes.slice(); swapSlot = slot?.slice() ?? null;
+  pkg = checked; fileName = name; generated = fromRom; firmwareBytes = bytes.slice(); swapSlot = slot?.slice() ?? null; swapBuild = build;
   $('fw-file').value = '';
   $('fw-info').textContent = `Firmware: ${name} (${pkg.product}), checks passed.`;
   $('fw-info').className = 'hint';
@@ -120,7 +120,7 @@ $('fw-install').onclick = async () => {
                    swap: 'The FM-1 already runs this firmware: changing only its LSDj (songs saved first). Keep the cable in'};
     let swapped = false;
     const id = await install(access, pkg, {
-      log, slot: swapSlot,
+      log, slot: swapSlot, build: swapBuild,
       onStep: (s, d) => {
         if (s === 'swap') swapped = true;
         log(names[s] + (d ? `: ${d}` : ''));

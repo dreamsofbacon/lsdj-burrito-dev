@@ -26,7 +26,7 @@ export async function prepareLsdjFirmware(rom, keepKits, template, metadata, {ve
   const info = await identifyRom(rom, versions);
   if (!experimental) throw Error('Explicit experimental consent is required. This template is not hardware-validated.');
   if (metadata.lsdj_slot !== 1 || metadata.generic_rom !== true || metadata.experimental !== true ||
-      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== '0.9.98-dev.8' ||
+      metadata.hardware_validated !== false || metadata.product !== 'FM-1_537000998' || metadata.version !== 'FM-1_998' || metadata.release !== '0.9.98-dev.9' ||
       metadata.usb_updater !== true || metadata.usb_protocol !== 'fm1-ota-v1')
     throw Error('Unsupported LSDj firmware template.');
   if (await sha256hex(template) !== metadata.sha256) throw Error('Firmware template integrity check failed.');
@@ -59,9 +59,11 @@ export async function prepareLsdjFirmware(rom, keepKits, template, metadata, {ve
       crc16(after) !== back.app.dcrc || checked.product !== metadata.product)
     throw Error('Prepared firmware failed its read-back checks.');
   /* the slot as the firmware holds it (its whole capacity, 0xFF after the data): the fast swap (install.js).
-     Only for a template that names its build (build_id): the swap changes LSDj only, and every 0.9.98-dev build
-     reports the same identity (FM-1_537000998), so a dev.6 FM-1 "already ran" dev.7 and kept its dev.6 code
-     (Colin's FM-1: dev.7's song fix never arrived). Without it: null, the whole install. */
-  const swapSlot = Number.isInteger(metadata.build_id) ? placed.slice() : null;
-  return {bytes, product: checked.product, sha256: await sha256hex(bytes), info, plan, slot: swapSlot};
+     Only for a template that names its build (build_id, 0.9.98-dev.9): the swap changes LSDj only, and every
+     0.9.98-dev build reports the same identity (FM-1_537000998), so a dev.6 FM-1 "already ran" dev.7 and kept its
+     dev.6 code (Colin's FM-1: dev.7's song fix never arrived). install() swaps only when the FM-1 reports this
+     build (link INFO). Without it: null, the whole install. */
+  const build = Number.isInteger(metadata.build_id) ? metadata.build_id : null;
+  const swapSlot = build !== null ? placed.slice() : null;
+  return {bytes, product: checked.product, sha256: await sha256hex(bytes), info, plan, slot: swapSlot, build};
 }

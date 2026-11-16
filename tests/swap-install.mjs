@@ -9,7 +9,7 @@ import {install, InstallError} from '../lsdj/install.js';
 import {sectorsToSend, SWAP_OP, SECTOR} from '../lsdj/swap.js';
 import {crc32, rd32} from '../lsdj/link.js';
 
-const PRODUCT = 'FM-1_537000998', SECTORS = 8, CAP = SECTORS * SECTOR;
+const PRODUCT = 'FM-1_537000998', BUILD = 0x5eed0009, SECTORS = 8, CAP = SECTORS * SECTOR;
 function slotImage(seed) {   /* a slot: a header (magic, header CRC at 252), then data; 0xFF after */
   const s = new Uint8Array(CAP).fill(0xff);
   s.set([...'LSDJSLOT'].map(c => c.charCodeAt(0)));
@@ -23,11 +23,12 @@ function slotImage(seed) {   /* a slot: a header (magic, header CRC at 252), the
 let fw;
 function reset(o = {}) {
   fw = {slot: slotImage(1), can: true, product: PRODUCT, ops: [], written: [], upgraded: false, restarts: 0, back: true,
-        beginStatus: 0, failWriteAt: -1, keepOld: false, ...o};
+        beginStatus: 0, failWriteAt: -1, keepOld: false, build: BUILD, infos: 0, ...o};
 }
 class FakeLink {
   constructor(input, output) { this.input = input; this.output = output; this.closed = false; }
   close() { this.closed = true; }
+  async info() { fw.infos++; return {build: fw.build}; }   /* link INFO: the build ID (0.9.98-dev.9; null before) */
   async req(op, bytes = []) {
     fw.ops.push(op);
     const ok = (data = []) => ({status: 0, data});
@@ -75,7 +76,7 @@ class FakeTransport {
 }
 const run = async (slot, o = {}) => {
   const steps = [], prog = [];
-  const id = await install({}, {product: PRODUCT, image: new Uint8Array(16)}, {slot, Transport: FakeTransport, LinkClass: FakeLink,
+  const id = await install({}, {product: PRODUCT, image: new Uint8Array(16)}, {slot, build: BUILD, Transport: FakeTransport, LinkClass: FakeLink,
     onStep: s => steps.push(s), onProgress: (d, t) => prog.push(`${d}/${t}`), hintMs: 50, waitMs: 200, ...o});
   return {id, steps, prog};
 };
@@ -125,6 +126,18 @@ const run = async (slot, o = {}) => {
   await run(slotImage(2), {swapMax: 4});
   assert.ok(!fw.upgraded && fw.restarts === 1, 'at the limit: still a swap');
 }
+/* 3c. the FM-1 runs another build of the same release (or one that names none), or this firmware names none: the
+   whole install, nothing swapped (every 0.9.98-dev build reports the same identity: a dev.6 FM-1 kept its dev.6 code) */
+{
+  for (const o of [{build: 0x5eed0008}, {build: null}]) {
+    reset(o);
+    const {steps} = await run(slotImage(2));
+    assert.ok(fw.upgraded && !steps.includes('swap') && !fw.ops.includes(SWAP_OP.BEGIN) && fw.infos === 1, JSON.stringify(o));
+  }
+  reset();
+  await run(slotImage(2), {build: null});
+  assert.ok(fw.upgraded && !fw.ops.includes(SWAP_OP.BEGIN), 'a firmware without a build ID: never swapped');
+}
 /* 4. the swap does not start (BEGIN refused: nothing changed): the whole install */
 {
   reset({beginStatus: 4});
@@ -144,4 +157,4 @@ const run = async (slot, o = {}) => {
   reset({back: false});
   await assert.rejects(run(slotImage(2)), e => e instanceof InstallError && /did not report back/.test(e.message));
 }
-console.log('PASS swap-install: only the sectors that differ, header last; whole install when it cannot (or did not start); errors after it began; the slot checked after the restart');
+console.log('PASS swap-install: only on the very build (INFO build ID); only the sectors that differ, header last; whole install when it cannot (or did not start); errors after it began; the slot checked after the restart');

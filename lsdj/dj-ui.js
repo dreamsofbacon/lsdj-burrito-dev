@@ -872,7 +872,7 @@ function drawPresets(d) {
   if (!p) return row.replaceChildren();
   row.replaceChildren(...p.names.map((name, i) => {
     const b = el('button', {type: 'button', className: 'dj-preset' + (name ? '' : ' empty') + (p.current === i ? ' on' : ''), textContent: String(i + 1),
-      title: name ? `Preset ${i + 1}: ${name} (on the FM-1: EDIT + ${PRESET_KEYS[i]})` : `Preset ${i + 1}: empty`,
+      title: name ? `Preset ${i + 1}: ${name} (on the FM-1: EDIT, then ${PRESET_KEYS[i]})` : `Preset ${i + 1}: empty`,
       onclick: () => void deckPreset(d, i)});
     b.setAttribute('aria-pressed', String(p.current === i));
     return b;
@@ -881,7 +881,7 @@ function drawPresets(d) {
 async function deckPreset(d, i) {
   const l = hooks.linkFor(d.key), name = d.presets?.names[i];
   if (!l || !d.presets) return;
-  if (!name) return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty. Keep one there in Perform › Effects › Presets › Manage…, or on the FM-1: EDIT + SELECT opens the list, then SELECT, then ${PRESET_KEYS[i]}.`);
+  if (!name) return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty. Keep one there in Perform › Effects › Presets › Manage…, or on the FM-1: EDIT, the SELECT knob to slot ${i + 1}, then SAVE.`);
   if (d.throwing || d.filter) return say(`Deck ${NAMES[d.i]}: let go of the filter and throws first, then load the preset.`);
   try {
     if (await l.presetLoad(i) === 'empty') return say(`Deck ${NAMES[d.i]}: preset ${i + 1} is empty.`);
