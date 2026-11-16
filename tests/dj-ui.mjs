@@ -187,9 +187,12 @@ export async function runDjUiTests() {
     const syncB = () => deckBEl0().querySelector('.dj-sync');
     assert(deckB.synced && syncB().classList.contains('on') && syncB().textContent === 'SYNC', 'Sync lit while on');
     const barGap = () => offset(deckB.clock.phase(), djState().master.clock.phase());
-    await until(() => Math.abs(barGap()) < 0.75, `B on the master's bar: ${barGap()}`, 4000);
-    deckB.clock.bend(1.6); await sleep(400); deckB.clock.bend(1);   /* pushed off, as a drift would */
+    /* (Sync's own catch-up over first: its end would cancel the push; the lock held off while pushing, as during a
+       hand nudge, so the push is made whatever the timing) */
+    await until(() => !deckB.bendTimer && Math.abs(barGap()) < 0.75, `B on the master's bar: ${barGap()}`, 4000);
+    deckB.nudging = true; deckB.clock.bend(1.6); await sleep(400); deckB.clock.bend(1);   /* pushed off, as a drift would */
     assert(Math.abs(barGap()) > 2, `B pushed off the bar: ${barGap()}`);
+    deckB.nudging = false;
     await until(() => Math.abs(barGap()) < 0.75, `locked: back on the master's bar by itself: ${barGap()}`, 5000);
     const masterIn = document.querySelector('.dj-master .dj-bpm-in');
     masterIn.value = '124'; masterIn.dispatchEvent(new Event('change'));
@@ -209,6 +212,36 @@ export async function runDjUiTests() {
     bpmB0.value = '120'; bpmB0.dispatchEvent(new Event('change'));
     deckBEl0().querySelector('.dj-play').click();   /* B playing again, on the master's bar */
     await until(() => deckB.clock.running, 'B playing again', 3000);
+
+    // 3c. Play starts (Colin: hard to start on time): every 2 bars of deck A (its LSDj's phrases from its start); PLAY
+    //     counts down; Play again while it counts cancels (no Start sent); kept in this browser
+    {
+      const startOn = document.querySelector('select[aria-label="Play starts"]'), from = document.querySelector('select[aria-label="Count the start on"]');
+      assert(startOn && from && startOn.value === 'bar' && from.value === 'deck', `Play starts: next bar, on the playing deck: ${startOn?.value} ${from?.value}`);
+      deckBEl0().querySelector('.dj-play').click();   /* B stopped */
+      assert(!deckB.clock.running, 'B stopped for 3c');
+      choose(startOn, '2');
+      assert(localStorage.getItem('dj-start-on') === '2', 'kept');
+      const deckA = djState().decks[0];
+      /* wait until A is early in a 2-bar span, so the start is more than a beat away */
+      await until(() => { const p = deckA.clock.phase() % 192; return p > 10 && p < 40; }, 'A early in its 2 bars', 5000);
+      B.midi.length = 0;
+      deckBEl0().querySelector('.dj-play').click();
+      assert(deckB.startTimer && !deckB.clock.running, 'B waiting, its clock not started yet');
+      await sleep(150);
+      const playTxt = deckBEl0().querySelector('.dj-play').textContent, gapTxt = deckBEl0().querySelector('.dj-gap').textContent;
+      assert(/^\d$/.test(playTxt) && /starts in \d bars?/.test(gapTxt), `PLAY counts down: "${playTxt}", "${gapTxt}"`);
+      deckBEl0().querySelector('.dj-play').click();   /* cancel */
+      assert(!deckB.startTimer && !deckB.clock.running, 'Play again: cancelled');
+      await sleep(400);
+      assert(!B.midi.some(m => m[0] === 0xfa || m[0] === 0xf8), `cancelled: nothing sent to B: ${B.midi.length}`);
+      deckBEl0().querySelector('.dj-play').click();
+      await until(() => B.midi.some(m => m[0] === 0xfa), 'B started on A\'s 2 bars', 6000);
+      const at2 = B.midi.find(m => m[0] === 0xfa).ts, onA = deckA.clock.phase(at2);
+      const off2 = Math.min(onA % 192, 192 - (onA % 192));
+      assert(off2 < 0.5, `B's Start on A's every-2-bars: A at ${onA.toFixed(2)} clocks then`);
+      choose(startOn, 'bar');
+    }
 
     // 4. a stem kill (NOI on A, now) and the DJ filter (A to low-pass): sent to A only
     const killNoi = [...document.querySelectorAll('.dj-deck')][0].querySelectorAll('.dj-kill')[3];
@@ -905,7 +938,7 @@ export async function runDjUiTests() {
     /* never two links on one FM-1 input (link.js says so in the Log: the older one would stop hearing) */
     { const {logEntries} = await import('../lsdj/conn-log.js'); const two = logEntries().filter(e => /Two links on one FM-1 input/.test(e.text));
       assert(!two.length, `two links on one input: ${two.map(e => e.text).join(' | ')}`); }
-    return 'PASS DJ layout: switch, decks on FM-1s, Start and clocks per deck, the next bar, its own tempo, Sync (a lock: lit, keeps the bar, follows the master, on a stopped deck, lets go when typed), stem kill, DJ filter, the echo throw (a tempo echo on a fresh FM-1, all back on let go), Loop (LSDj live mode), On bar, the key of the song (read in parts, C · 8B), Perform › Clock off, 0.9.98 (crossfader to FM-1 volume, Hold), DJ colours (the page and panel; FM-1 decks keep theirs), each deck its FM-1 colours, its label (the .sav sent, the open song, changed since), Screen | Rows (screen, song row map, click to cue), Tap quickly (no redraw), Whole BPM, the tempo controls (− / + held, nudge buttons, ×½ / ×2, MASTER, the fader range, pads, a glide, Next bar), TX-6 button and crossfader, fader mirrored, full volume after, an ArduinoBoy deck (speed notes, its channel, Start and clocks, FM-1 controls hidden), the crate (asked on the card, never confirm(); held to load; a .sav onto deck A while B plays on, untouched; ON A and the deck chip; Songs straight into a chosen song; search; Grab B; remove), an FM-1 pulled and back (the deck takes it back, playing, also on new port ids with its .sav label; the Log), stopped on the FM-1 (the deck stops too), never two links on one input, each deck sets its FM-1 up (MIDI settings, LSDj SYNC to KEYBD; the warning strip), the jog every frame, a switch while the decks poll, Follow put in the DJ layout, the screens unframed (the label a tooltip), each deck FX panel (a drawer, only its own FM-1, follows its knobs, Columns, its own window), OP4 / OP5 on the FM-1 (Play, Stop, its lights told each poll, let go on Effects; older firmware not asked again)';
+    return 'PASS DJ layout: switch, decks on FM-1s, Start and clocks per deck, the next bar, Play starts (every 2 bars of the other deck, counted down on PLAY, cancelled by Play again), its own tempo, Sync (a lock: lit, keeps the bar, follows the master, on a stopped deck, lets go when typed), stem kill, DJ filter, the echo throw (a tempo echo on a fresh FM-1, all back on let go), Loop (LSDj live mode), On bar, the key of the song (read in parts, C · 8B), Perform › Clock off, 0.9.98 (crossfader to FM-1 volume, Hold), DJ colours (the page and panel; FM-1 decks keep theirs), each deck its FM-1 colours, its label (the .sav sent, the open song, changed since), Screen | Rows (screen, song row map, click to cue), Tap quickly (no redraw), Whole BPM, the tempo controls (− / + held, nudge buttons, ×½ / ×2, MASTER, the fader range, pads, a glide, Next bar), TX-6 button and crossfader, fader mirrored, full volume after, an ArduinoBoy deck (speed notes, its channel, Start and clocks, FM-1 controls hidden), the crate (asked on the card, never confirm(); held to load; a .sav onto deck A while B plays on, untouched; ON A and the deck chip; Songs straight into a chosen song; search; Grab B; remove), an FM-1 pulled and back (the deck takes it back, playing, also on new port ids with its .sav label; the Log), stopped on the FM-1 (the deck stops too), never two links on one input, each deck sets its FM-1 up (MIDI settings, LSDj SYNC to KEYBD; the warning strip), the jog every frame, a switch while the decks poll, Follow put in the DJ layout, the screens unframed (the label a tooltip), each deck FX panel (a drawer, only its own FM-1, follows its knobs, Columns, its own window), OP4 / OP5 on the FM-1 (Play, Stop, its lights told each poll, let go on Effects; older firmware not asked again)';
   } finally {
     if (descriptor) Object.defineProperty(navigator, 'requestMIDIAccess', descriptor); else delete navigator.requestMIDIAccess;
   }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // lsdj/dj.js: the DJ layout's maths (node tests/dj.mjs).
 import assert from 'node:assert/strict';
-import {BEAT, BAR, position, offset, syncBend, nextOn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
+import {BEAT, BAR, position, offset, syncBend, nextOn, START_ON, startUnit, startTime, countIn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
 import {PPQN} from '../lsdj/midiclock.js';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -39,6 +39,21 @@ assert.equal(offset(null, 3), null);
   assert.ok(near(nextOn(96 * 3, 120, 1000), 1000), 'on the bar: now');
   assert.ok(near(nextOn(30, 120, 0, BEAT), 18 * clock), 'the next beat');
   assert.equal(nextOn(null, 120, 50), 50, 'no master: now'); }
+
+/* Play's start (Start on): every N bars of a reference, now, or no reference; the count-in */
+{ const clock = 60000 / (120 * PPQN);
+  assert.equal(startUnit('now'), 0); assert.equal(startUnit('beat'), BEAT); assert.equal(startUnit('8'), 8 * BAR);
+  assert.equal(startUnit('nonsense'), BAR, 'unknown: the next bar');
+  assert.ok(START_ON.every(([k, t, u]) => typeof k === 'string' && t && u === startUnit(k)));
+  assert.ok(near(startTime(BAR * 5.5, 120, 1000, 8 * BAR), 1000 + BAR * 2.5 * clock), 'bar 5.5 of 8: its bar 8');
+  assert.ok(near(startTime(BAR * 4, 120, 1000, 4 * BAR), 1000), 'on its 4 bars: now');
+  assert.ok(near(startTime(0x0A * 6, 120, 0, BAR), 6 * 6 * clock), 'its LSDj at row 0A: 6 rows later (row 00)');
+  assert.equal(startTime(null, 120, 50, BAR), 50, 'nothing plays: now');
+  assert.equal(startTime(30, 120, 50, 0), 50, 'Now: now');
+  assert.deepEqual(countIn(2000, 120, 0), {beats: 4, bars: 1}, '2 s at 120: 4 beats, a bar');
+  assert.deepEqual(countIn(2100, 120, 0), {beats: 5, bars: 2});
+  assert.deepEqual(countIn(400, 120, 0), {beats: 1, bars: 1}, 'the last beat: 1');
+  assert.deepEqual(countIn(0, 120, 10), {beats: 0, bars: 0}, 'past: 0'); }
 
 /* crossfader */
 assert.deepEqual(crossfade(0, 'linear'), [1, 0]); assert.deepEqual(crossfade(1, 'linear'), [0, 1]);

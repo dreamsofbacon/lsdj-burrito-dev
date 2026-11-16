@@ -19,7 +19,7 @@
 //   on that FM-1's link, or (0.9.98) the song row map: click a row to cue it.
 import {startClock, clampBpm, PPQN, CLOCK, START, CONTINUE, STOP, LOOKAHEAD_MS, workerTimer} from './midiclock.js';
 import {sameFm1, OP} from './link.js';
-import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
+import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
 import {PRESETS, preset, readMidi, actionFor, out, learnRule, saveLearned, loadLearned} from './mixers.js';
 import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
 import {unpackFx, packFx, unpackReverb, packReverb, packReverbSends, CHANNELS, firmwareNumber, unpackSettings, PRESETS as THEME_COLOURS, CUSTOM_THEME, THEMES, unpackMidi, packMidi, paramSet, PARAM} from './fx-model.js';
@@ -67,7 +67,11 @@ function runDue() {
 const master = {bpm: clampBpm(+store.get('dj-bpm', 120)), clock: null, source: 'page', ext: null, tap: tapper(),
   whole: store.get('dj-whole', '0') === '1',
   pads: loadPads(store.get('dj-pads', '[]')), onBar: store.get('dj-tempo-bar', '0') === '1', padGlide: store.get('dj-pad-glide', '0') === '1',
-  glideBars: GLIDE_BARS.includes(+store.get('dj-glide-bars', 8)) ? +store.get('dj-glide-bars', 8) : 8, glide: null, pending: 0};
+  glideBars: GLIDE_BARS.includes(+store.get('dj-glide-bars', 8)) ? +store.get('dj-glide-bars', 8) : 8, glide: null, pending: 0,
+  /* Play's start (dj.js START_ON): startOn when, counted on startFrom: 'deck' (the other deck while it plays: its
+     LSDj's phrases, else the master) or 'master' */
+  startOn: START_ON.some(s => s[0] === store.get('dj-start-on', 'bar')) ? store.get('dj-start-on', 'bar') : 'bar',
+  startFrom: store.get('dj-start-from', 'deck') === 'master' ? 'master' : 'deck'};
 /* a tempo as set here: whole, or to a tenth */
 const tempoOf = b => { const c = clampBpm(b); return master.whole ? Math.round(c) : Math.round(c * 10) / 10; };
 const bpmText = b => master.whole ? String(Math.round(b)) : b.toFixed(1);
@@ -214,10 +218,10 @@ function nextRange(d) {
 function masterPlay() {
   if (master.source !== 'page') { mixerSend('play'); return; }   /* an outside master: ask it (a mixer that takes it) */
   const c = masterClock();
-  if (c.running) { c.stop(); decks.forEach(d => d.clock?.running && d.clock.stop()); drawPlay(); return; }
+  if (c.running) { c.stop(); decks.forEach(d => { if (d.startTimer) cancelStart(d); if (d.clock?.running) d.clock.stop(); }); drawPlay(); return; }
   const at = now() + 60;
   c.start(at);
-  decks.forEach(d => { if (d.key) { deckClock(d).setTempo(d.bpm); if (!d.clock.running) d.clock.start(at); } });
+  decks.forEach(d => { if (d.key) { if (d.startTimer) cancelStart(d); deckClock(d).setTempo(d.bpm); if (!d.clock.running) d.clock.start(at); } });
   drawPlay();
 }
 /* Play / Stop changed: the decks' PLAY and nudge buttons and the mixer's Play all, not the whole layout */
@@ -263,7 +267,7 @@ function deckClock(d) {
   return d.clock;
 }
 async function assign(d, value) {
-  d.clock?.stop(); d.clock?.close(); d.clock = null; d.startAt = 0; d.djNo = false;
+  cancelStart(d); d.clock?.stop(); d.clock?.close(); d.clock = null; d.startAt = 0; d.djNo = false;
   if (d.kind === 'fm1') djLetGo(d.key);   /* its OP4 / OP5 are its own again */
   if (d.kind === 'fm1' && d.levelSent !== 127) void fullVolume(d.key);   /* the FM-1 leaving the deck: full volume again */
   d.key = ''; d.kind = ''; d.live = null; d.fx = null; d.rv = null; d.base = null; d.throwing = null; d.kill = 0; d.killWant = null; d.killDoneAt = null; d.killDirty = 0; d.ccFx = 0; cancelLater(d.killTimer); d.killTimer = 0; d.levelPosted = null; d.filter = 0; setSynced(d, false); deckBend(d, 1); d.nudging = false;
@@ -300,22 +304,54 @@ function deckPlay(d) {
   if (!d.key) return;
   const c = deckClock(d);
   d.seenPlaying = false; d.idlePolls = 0;
+  if (d.startTimer) {   /* waiting to start: Play again cancels it (nothing was sent yet) */
+    cancelStart(d); drawPlay(d); void djKeys(d);
+    return say(`Deck ${NAMES[d.i]}: start cancelled.`);
+  }
   if (c.running) { c.stop(); d.startAt = 0; drawPlay(d); void djKeys(d); return; }
+  armStart(d);
+  const r = startRef(d);
+  if (d.startTimer) say(`Deck ${NAMES[d.i]}: starts on ${r?.what || 'the master'}'s ${startWhat()} (Play again to cancel).`);
+}
+/* where Play counts from now: {phase (clocks), bpm, what} — the other deck while it plays (Start on: the playing
+   deck), its LSDj's phrase row when the FM-1 runs on its own clock (its bar only), else the master; null: nothing
+   plays */
+function startRef(d, t = now()) {
+  if (master.startFrom === 'deck') {
+    const o = decks.find(o => o !== d && o.key && (o.clock?.running ? t >= (o.startAt || 0) : o.ownRow != null && o.live?.bpm));
+    if (o?.clock?.running) return {phase: o.clock.phase(t), bpm: o.bpm * (o.clock.factor || 1), what: `deck ${NAMES[o.i]}`};
+    if (o) return {phase: deckPos(o, t), bpm: o.live.bpm, what: `deck ${NAMES[o.i]}`, barOnly: true};
+  }
+  const m = masterNow(t);
+  return m.phase == null ? null : {phase: m.phase, bpm: m.bpm, what: 'the master'};
+}
+const startWhat = () => master.startOn === 'now' ? 'now' : (START_ON.find(s => s[0] === master.startOn)?.[1] || 'next bar').toLowerCase().replace(/^every /, 'next ').replace(' (lsdj phrase)', '');
+/* the deck's start, worked out again until it is close (a tempo change meanwhile moves the bar): the clock (its Start
+   and first clocks, timed) only from ARM_MS before it, so a cancel before then sends nothing */
+const ARM_MS = 300;
+function armStart(d) {
+  d.startTimer = 0;
+  const c = deckClock(d), t = now();
   if (d.synced) followMaster(d);   /* (the master's tempo; starting on its bar puts the bars together) */
-  c.setTempo(d.bpm);
-  const m = masterNow();
+  const r = startRef(d, t);
   let at;
-  if (m.phase == null && master.source === 'page') { at = now() + 60; masterClock().start(at); c.start(at); }
-  else c.start(at = nextOn(m.phase, m.bpm, now()));   /* on the master's next bar */
+  if (!r && master.source === 'page') { at = t + 60; if (!masterClock().running) masterClock().start(at); }   /* nothing plays: the master starts with it */
+  else {
+    const unit = startUnit(master.startOn);
+    at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
+  }
   d.startAt = at;
+  if (at - t > ARM_MS) d.startTimer = later(at - t - ARM_MS, () => armStart(d));
+  else { c.setTempo(d.bpm); c.start(at); }
   drawPlay(d);
-  void djKeys(d);   /* its FM-1's OP4 blinks until the bar, then plays */
+  void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
 }
+function cancelStart(d) { cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
 /* 0.9.98-dev.4: the deck on its FM-1's own keys, OP4 Play and OP5 Stop, lit as the deck (firmware/lsdj_djkeys.h).
    Each poll tells the FM-1 the deck's state (DJ_DECK); it lets go of the keys 3 s after the last one, and at once
    when the layout hides, the deck takes another FM-1, or the page closes. A firmware without it: not asked again. */
-const keysState = d => !d.clock?.running ? 'stopped' : now() < (d.startAt || 0) ? 'waiting' : 'playing';
+const keysState = d => d.startTimer ? 'waiting' : !d.clock?.running ? 'stopped' : now() < (d.startAt || 0) ? 'waiting' : 'playing';
 async function djKeys(d, l = hooks.linkFor(d.key)) {
   if (!shown || d.kind !== 'fm1' || !l || d.djNo) return;
   const key = d.key;
@@ -323,8 +359,8 @@ async function djKeys(d, l = hooks.linkFor(d.key)) {
   try { if (!await l.djDeck(keysState(d))) d.djNo = true; } catch { /* lost: the next poll sends it again */ }
 }
 function djPress(d, k) {
-  if (k === 'play' && !d.clock?.running) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Play on the FM-1.`); }
-  else if (k === 'stop' && d.clock?.running) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Stop on the FM-1.`); }
+  if (k === 'play' && !d.clock?.running && !d.startTimer) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Play on the FM-1.`); }
+  else if (k === 'stop' && (d.clock?.running || d.startTimer)) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Stop on the FM-1.`); }
 }
 function djLetGo(key) {
   const l = hooks.linkFor(key);
@@ -992,7 +1028,7 @@ function drawDeck(d) {
   const fm1 = d.kind === 'fm1', fw = firmwareNumber(hooks.devices().find(x => x.key === d.key)?.fw), has98 = fw >= 998;
   u.body.replaceChildren();
   u.box.classList.toggle('empty', !d.key);
-  u.info = null; u.hold = null; u.map = null; u.rowIn = null; u.pitch = null; u.jog = null; u.kills = null; u.beatShown = undefined;
+  u.info = null; u.hold = null; u.map = null; u.rowIn = null; u.pitch = null; u.jog = null; u.kills = null; u.beatShown = undefined; u.play = null;
   if (!d.key) { u.body.append(el('p', {className: 'hint dj-empty', textContent: 'Choose an FM-1 or another MIDI device for this deck.'})); return; }
   const running = !!d.clock?.running;
 
@@ -1076,8 +1112,8 @@ function drawDeck(d) {
       el('div', {className: 'dj-round-wrap'}, btn('CUE', () => cueRow(d), {className: 'dj-round dj-cue', title: 'Cue row: plays that song row at the next bar (FM-1: PC CUE on)'})));
   }
   left.append(el('div', {className: 'dj-round-wrap'},
-    btn(running ? '❚❚' : '▶', () => deckPlay(d), {className: `dj-round dj-play${running ? ' on' : ''}`, ariaLabel: running ? 'Stop' : 'Play',
-      title: running ? 'Stop' : 'Play: starts on the master\'s next bar'}),
+    u.play = btn(running ? '❚❚' : '▶', () => deckPlay(d), {className: `dj-round dj-play${running ? ' on' : ''}`, ariaLabel: d.startTimer ? 'Cancel the start' : running ? 'Stop' : 'Play',
+      title: d.startTimer ? 'Waiting to start (it counts down): press again to cancel' : running ? 'Stop' : 'Play: starts as Start on says (Master: the other deck\'s next LSDj phrase, or every 2 to 16 bars); press again while it counts down to cancel'}),
     el('span', {className: 'dj-small', textContent: 'PLAY/STOP'})));
 
   /* SYNC and the tempo fader down the right (its tempo against the master's, ±8 %; up is slower, as on a CDJ) */
@@ -1273,7 +1309,12 @@ function drawMixer() {
       el('label', {className: 'dj-small', title: 'Every tempo set here snaps to a whole number: Tap, typing, − / +, the decks, the mixer\'s tempo control'}, whole, ' Whole BPM'),
       check(master.onBar, v => { master.onBar = v; store.set('dj-tempo-bar', v ? '1' : '0'); }, ' Next bar',
         'Pads, ×½ / ×2, LSDj tempos and a glide\'s start wait for the master\'s next bar (while it plays)'),
-      check(master.padGlide, v => { master.padGlide = v; store.set('dj-pad-glide', v ? '1' : '0'); }, ' Pads glide', 'A pad glides to its tempo (over the bars chosen) instead of jumping')),
+      check(master.padGlide, v => { master.padGlide = v; store.set('dj-pad-glide', v ? '1' : '0'); }, ' Pads glide', 'A pad glides to its tempo (over the bars chosen) instead of jumping'),
+      /* Play's start: when, and counted on what (dj.js START_ON) */
+      el('label', {className: 'dj-small dj-starton', title: 'When a deck\'s PLAY starts it. A bar is one LSDj phrase (16 rows): "Next bar" starts on the playing deck\'s next row 00; 2 to 16 bars count from where that deck started. PLAY counts down meanwhile; press it again to cancel.'},
+        'Play starts: ', sel(START_ON.map(([k, t]) => [k, t]), master.startOn, v => { master.startOn = v; store.set('dj-start-on', v); }, 'Play starts')),
+      el('label', {className: 'dj-small dj-starton', title: 'Counted on the other deck while it plays (its LSDj\'s phrases), or always on the master clock'},
+        'on ', sel([['deck', 'the playing deck'], ['master', 'the master']], master.startFrom, v => { master.startFrom = v; store.set('dj-start-from', v); }, 'Count the start on'))),
     /* a phone on its side (index.html: the compact console): the master's other controls, the top line's and each
        deck's "by" choices behind ⋯ (#dj-root.more); hidden on a larger screen */
     btn('⋯', () => { const on = root.classList.toggle('more'); ms.querySelector('.dj-more')?.setAttribute('aria-expanded', String(on)); },
@@ -1398,7 +1439,12 @@ function tick() {
     if (u.pitchTxt && u.pitchTxt.textContent !== pt) u.pitchTxt.textContent = pt;
     if (u.pitch && !u.pitchHeld && u.pitch.ownerDocument.activeElement !== u.pitch && +u.pitch.value !== pv) u.pitch.value = pv;
     const gap = offset(ph, m.phase);
-    setText(u.gap, gap != null ? (Math.abs(gap) < 0.5 ? 'in sync' : `${gap > 0 ? 'behind' : 'ahead'} ${(Math.abs(gap) / 6).toFixed(1)} rows`)
+    /* waiting to start (Start on): the count-in on PLAY, beats on the last bar, else bars */
+    const waiting = d.startTimer || (d.clock?.running && t < (d.startAt || 0));
+    const left = waiting ? countIn(d.startAt, startRef(d, t)?.bpm || d.bpm, t) : null;
+    if (u.play) setText(u.play, left ? (left.beats > 4 ? `${left.bars}` : `·${left.beats}`) : d.clock?.running ? '❚❚' : '▶');
+    if (u.play) u.play.classList.toggle('wait', !!left);
+    setText(u.gap, left ? `starts in ${left.beats > 4 ? `${left.bars} bars` : `${left.beats} beat${left.beats === 1 ? '' : 's'}`}` : gap != null ? (Math.abs(gap) < 0.5 ? 'in sync' : `${gap > 0 ? 'behind' : 'ahead'} ${(Math.abs(gap) / 6).toFixed(1)} rows`)
       : own != null ? `own clock · row ${hex2(own)}` : d.clock?.running ? 'no master' : 'stopped');
     if (u.info) setText(u.info, !d.live ? '' : [`On the FM-1: ${d.live.bpm} BPM · playing ${CHANNELS.filter((n, c) => (d.live.playing >> c) & 1).join(' ') || 'nothing'}`,
       d.live.level != null && d.live.level < 127 ? `volume ${Math.round(d.live.level / 1.27)} % from this page` : ''].filter(Boolean).join(' · '));
