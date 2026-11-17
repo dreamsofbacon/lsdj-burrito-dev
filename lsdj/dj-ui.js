@@ -276,7 +276,7 @@ async function assign(d, value) {
   d.savHead = null; d.sav = null; d.savMatch = null; d.savAt = 0; d.seenPlaying = false; d.idlePolls = 0;
   d.song = null; d.songRead = null; d.songAt = null; d.songKeys = null;   /* (songAt null: never read) */
   d.presets = null; d.presetsAt = 0; drawPresets(d);
-  d.syncTried = null; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
+  d.syncTried = null; d.syncSetOnce = false; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
   d.level = null; d.levelSent = 127; d.scrOk = true; d.themeAt = 0; d.map = null; d.mapFrom = -1; d.mapFill = null;
   paintDeck(d, null);
   if (value) { const [kind, ...k] = value.split(':'); d.kind = kind; d.key = k.join(':'); }
@@ -1550,7 +1550,16 @@ async function lsdjSync(d, l) {
   if (d.syncTried === s) return;
   d.syncTried = s;
   const r = await l.syncSet('keybd').catch(() => 'no');
-  if (r === 'ok') { setWarn(d, 'sync', ''); say(`Deck ${NAMES[d.i]}: set LSDj's SYNC from ${SYNC_NAME[s]} to KEYBD (the FM-1 switches it to MIDI while this page plays it).`); }
+  /* LSDj keeps SYNC in each song: songs sent (the crate), or another song opened on LSDj, bring that song's SYNC back,
+     and it's set again here. The Log said the same line twice, which read as "SYNC doesn't stick" (Colin's DJ test,
+     2026-11-17); it stays (harness/out/sync_stick_emu.mjs: KEYBD 20 s on, the song's own SYNC after a load). */
+  if (r === 'ok') {
+    setWarn(d, 'sync', '');
+    say(`Deck ${NAMES[d.i]}: set LSDj's SYNC from ${SYNC_NAME[s]} to KEYBD ` + (d.syncSetOnce
+      ? `again: the song LSDj has open now keeps its own SYNC (a song sent or opened brings it back).`
+      : `(the FM-1 switches it to MIDI while this page plays it).`));
+    d.syncSetOnce = true;
+  }
   else if (r === 'playing') d.syncTried = null;   /* (next poll) */
   else if (s === 'midi' || s === 'lsdj')   /* 0.9.98-dev.1: OFF and KEYBD switch by themselves; these don't */
     setWarn(d, 'sync', `LSDj SYNC is ${SYNC_NAME[s]}: set it to KEYBD on LSDj's PROJECT screen (0.9.98-dev.2 does it by itself), or the FM-1 ${s === 'lsdj' ? 'won\'t follow this deck' : 'won\'t play without this page'}.`);
