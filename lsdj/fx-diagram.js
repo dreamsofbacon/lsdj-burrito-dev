@@ -11,7 +11,8 @@
 import {CHANNELS, reverbSeconds} from './fx-model.js';
 
 const num = v => String(v & 255);   // decimal, as the page's controls show values
-const FILTER = ['', 'LP', 'HP', 'BP', 'NOTCH', 'LP24'], DIST = ['SOFT', 'HARD', 'FOLD', 'FUZZ'], DEST = ['CUT', 'VOL', 'PAN'];
+const FILTER = ['', 'LP', 'HP', 'BP', 'NOTCH', 'LP24', 'PHASR', 'VOWEL'], DIST = ['SOFT', 'HARD', 'FOLD', 'FUZZ', 'SFOLD', 'RECT', 'RING', 'TAPE'],
+  DEST = ['CUT', 'VOL', 'PAN'];
 const NAME = {drive: 'Drive', filter: 'Filter', lofi: 'Lo-fi', lfo: 'LFO', echo: 'Echo', reverb: 'Reverb', comp: 'Compressor'};
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 

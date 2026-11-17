@@ -7,16 +7,19 @@ export const CHANNELS = ['PU1', 'PU2', 'WAV', 'NOI'];
 /* Every effect, as firmware/lsdj_fx.h / lsdj_fx_ui.h (alpha 66: 17 words; 11 before).
    where: 'ch' per channel (bytes c*7+i), 'q' per channel, alpha 66 (bytes 44+c*6+i),
    'echo' (bytes 28+i), 'comp' (byte 43), 'flags' (fxOff bits, mute / freeze: live only). */
-export const FILTERS = ['Off', 'Low-pass', 'High-pass', 'Band-pass', 'Notch', 'Low-pass 24 dB'];
+export const FILTERS = ['Off', 'Low-pass', 'High-pass', 'Band-pass', 'Notch', 'Low-pass 24 dB', 'Phaser', 'Vowel'];
 export const CH_PARAMS = [   // per channel, in the packed order
-  {key: 'type', name: 'Filter', choices: FILTERS},
+  {key: 'type', name: 'Filter', choices: FILTERS, old: 6},
   {key: 'cutoff', name: 'Cutoff'}, {key: 'reso', name: 'Resonance'}, {key: 'drive', name: 'Drive'},
   {key: 'crush', name: 'Crush'}, {key: 'decim', name: 'Decimate'}, {key: 'send', name: 'Echo send'}];
 export const Q_PARAMS = [    // per channel, alpha 66, in the packed order
-  {key: 'dist', name: 'Distortion', choices: ['Soft', 'Hard', 'Fold', 'Fuzz']},
+  {key: 'dist', name: 'Distortion', choices: ['Soft', 'Hard', 'Fold', 'Fuzz', 'Sine fold', 'Rectify (octave up)', 'Ring', 'Tape'], old: 4},
   {key: 'warm', name: 'Warm'}, {key: 'lfoRate', name: 'LFO rate'}, {key: 'lfoDepth', name: 'LFO depth'},
-  {key: 'lfoShape', name: 'LFO shape', choices: ['Sine', 'Triangle', 'Square', 'Saw', 'Random']},
+  {key: 'lfoShape', name: 'LFO shape', choices: ['Sine', 'Triangle', 'Square', 'Saw', 'Random', 'Gate 8ths', 'Gate offbeat', 'Gate trance', 'Gate 3-3-2'], old: 5},
   {key: 'lfoDest', name: 'LFO to', choices: ['Cutoff', 'Volume', 'Pan']}];
+/* The choices an FM-1 takes (old: how many before 0.9.98): the filters Phaser and Vowel, the distortions Sine fold to
+   Tape and the gates only when its INFO says it has them (link.js info.fx98); an older FM-1 refuses a setup with them */
+export const choicesFor = (p, fx98) => p.old && !fx98 ? p.choices.slice(0, p.old) : p.choices;
 export const ECHO_PARAMS = [
   {key: 'time', name: 'Time'}, {key: 'feedback', name: 'Feedback'}, {key: 'mix', name: 'Mix'},
   {key: 'sync', name: 'Sync', choices: ['Free', 'Tempo']}, {key: 'mode', name: 'Mode', choices: ['Mono', 'Ping-pong']},
@@ -214,8 +217,8 @@ export function channelSummary(fx, c) {
   const ch = fx.ch[c], q = fx.q[c], on = [];
   if (fx.bypass) return 'dry (All FX off)';
   if ((fx.fxOff >> c) & 1) return 'dry';
-  if (ch.type) on.push(['', 'LP', 'HP', 'BP', 'Notch', 'LP24'][ch.type] + ' ' + ch.cutoff);
-  if (ch.drive) on.push(['Soft', 'Hard', 'Fold', 'Fuzz'][q.dist] + ' ' + ch.drive);
+  if (ch.type) on.push(['', 'LP', 'HP', 'BP', 'Notch', 'LP24', 'Phaser', 'Vowel'][ch.type] + ' ' + ch.cutoff);
+  if (ch.drive) on.push(['Soft', 'Hard', 'Fold', 'Fuzz', 'Sine fold', 'Rect', 'Ring', 'Tape'][q.dist] + ' ' + ch.drive);
   if (q.lfoDepth) on.push('LFO→' + ['cut', 'vol', 'pan'][q.lfoDest]);
   if (ch.crush || ch.decim) on.push('lo-fi');
   if (ch.send) on.push('echo ' + ch.send);

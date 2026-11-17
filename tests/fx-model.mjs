@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import assert from 'node:assert/strict';
 import {unpackReverb, packReverbSends, packReverb, reverbSeconds, REVERB_PARAMS, valueText, PAGES, PAGES_997, PAGES_979, PAGES_978, LEGACY_PAGES, pagesForFx, firmwareNumber, unpackFx, packFx, paramGet, paramSet, channelSummary,
-        FEATURES, FEATURE_DEFAULTS, packFeatures, unpackFeatures, MIDI_CC_MAP, THEMES, isMasterPage, effectActive} from '../lsdj/fx-model.js';
+        FEATURES, FEATURE_DEFAULTS, packFeatures, unpackFeatures, MIDI_CC_MAP, THEMES, isMasterPage, effectActive, choicesFor, PARAM} from '../lsdj/fx-model.js';
 
 const setup = (layout, page, n = 17) => {
   const b = Array(4 * n).fill(0);
@@ -137,4 +137,16 @@ assert.ok(MIDI_CC_MAP.every(m => m[2] === 'channel' || m[2] === 'shared'));
   fx.fxOff = 2; assert.ok(!on('cutoff', 1) && !on('rvSend', 1) && on('dist', 0) && on('fxOn', 1), 'Channel FX off: that channel idle');
   fx.bypass = true; assert.ok(!on('dist', 0) && !on('mix') && !on('comp') && on('allFxOn'), 'All FX off: all idle but the switch');
   delete fx.reverb; fx.bypass = false; assert.ok(!on('rvMix') && !on('rvSend', 1), 'no reverb (older firmware)'); }
-console.log('PASS FX model: seven-page mapping (979 and 975-978), global bypass/settings roundtrip, 11/17-word legacy layouts, invalid data, feature switches, CC map');
+/* 0.9.98: the new filters, distortions and gates (as firmware/lsdj_fx_ui.h names them), offered only to an FM-1 that
+   takes them (INFO fx98); a setup using them reads back and shows */
+{ assert.deepEqual(choicesFor(PARAM.type, false), ['Off', 'Low-pass', 'High-pass', 'Band-pass', 'Notch', 'Low-pass 24 dB']);
+  assert.deepEqual(choicesFor(PARAM.type, true).slice(6), ['Phaser', 'Vowel']);
+  assert.equal(choicesFor(PARAM.dist, false).length, 4); assert.equal(choicesFor(PARAM.dist, true).length, 8);
+  assert.equal(choicesFor(PARAM.lfoShape, false).length, 5); assert.equal(choicesFor(PARAM.lfoShape, true)[5], 'Gate 8ths');
+  assert.equal(choicesFor(PARAM.lfoShape, true).length, 9); assert.equal(choicesFor(PARAM.lfoDest, false).length, 3);
+  const fx = unpackFx(setup(2, 1)); fx.ch[0].type = 7; fx.ch[0].cutoff = 30; fx.ch[0].drive = 40; fx.q[0].dist = 7; fx.q[0].lfoShape = 8;   /* (channel 0: the setup leaves 1 and 2 dry) */
+  const back = unpackFx(packFx(fx));
+  assert.ok(back.ch[0].type === 7 && back.q[0].dist === 7 && back.q[0].lfoShape === 8);
+  assert.equal(valueText(back, 'type', 0), 'Vowel'); assert.equal(valueText(back, 'lfoShape', 0), 'Gate 3-3-2');
+  assert.match(channelSummary(back, 0), /Vowel 30.*Tape 40/); }
+console.log('PASS FX model: 0.9.98 choices (fx98 only); seven-page mapping (979 and 975-978), global bypass/settings roundtrip, 11/17-word legacy layouts, invalid data, feature switches, CC map');

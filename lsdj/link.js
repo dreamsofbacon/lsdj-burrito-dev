@@ -359,6 +359,7 @@ export function infoFrom(d) {
   const str = (a, b) => String.fromCharCode(...d.slice(a, b)).replace(/\0.*$/, '');
   return {protocol: d[0], firmware: str(1, 9), title: str(9, 25), saveSize: rd32(d, 25), saveCrc: rd32(d, 29), importing: d[33], liveKnown: !!(d[34] & 1), tags: !!(d[34] & 2),
     presets: !!(d[34] & 8),   /* 0.9.98-dev.6: PRESET_* */
+    fx98: !!(d[34] & 16),     /* 0.9.98-dev.10: the new filters, distortions and gates (fx-model.js choicesFor) */
     build: d.length >= 39 ? rd32(d, 35) : null};   /* 0.9.98-dev.9: the build ID (template.json build_id); null before */
 }
 

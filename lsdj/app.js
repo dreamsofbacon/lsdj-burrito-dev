@@ -11,7 +11,7 @@ import {setCrateHooks} from './crate-ui.js';
 import {logEvent} from './conn-log.js';
 import {CHANNELS, pagesForFx, PARAM, paramGet, paramSet, valueText, channelSummary, unpackFx, packFx, unpackReverb, packReverb, packReverbSends, PRESETS, THEMES, COLOR_NAMES, toHex, fromHex,
         SETTINGS, unpackSettings, packSettings, MIDI_SETTINGS, MIDI_CC_MAP, unpackMidi, packMidi, CUSTOM_THEME, isMasterPage,
-        firmwareNumber, FEATURES, unpackFeatures, packFeatures, effectActive} from './fx-model.js';
+        firmwareNumber, FEATURES, unpackFeatures, packFeatures, effectActive, choicesFor} from './fx-model.js';
 import {fxDiagram, pageFor} from './fx-diagram.js';
 import {zipStore} from './zip.js';
 import {startClock, startRelay, clampBpm} from './midiclock.js';
@@ -30,6 +30,7 @@ const say = (id, text, cls = 'hint') => {
   if (id === 'device' && cls !== 'hint') logEvent(text);   /* the connection's news, kept to read later (conn-log.js) */
 };
 let hasPresets = false;   // the FM-1 in use has presets (INFO, 0.9.98-dev.6)
+let fx98 = false;   // the FM-1 in use takes the 0.9.98 effect choices (INFO; fx-model.js choicesFor)
 const enable = on => {
   ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'].forEach(id => $(id).setAttribute('aria-disabled', on ? 'false' : 'true'));
   presetsShown(on && hasPresets);
@@ -72,7 +73,7 @@ async function connectOnce(input, output, how, fast) {
   try {
     const info = await link.info();
     if (info.protocol !== 1) throw new LinkError(`This page speaks link version 1; the FM-1 speaks ${info.protocol}. Update the page or the firmware.`);
-    fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets;
+    fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets; fx98 = !!info.fx98;
     muteOk = fwNum >= 977;   // MUTE_SET: FM-1_977 and newer
     say('device', (virtual ? `Connected to the virtual FM-1 (the emulator on this page, not a device): ` : `Connected over ${how}: `) +
       `${info.firmware} running ${info.title || 'a game'}` + (info.liveKnown ? '' : ' (live data needs LSDj 9.3.9)'), 'ok');
@@ -738,7 +739,7 @@ function control(key, ch, cell = false) {
     set = v => btns.forEach((b, i) => { b.classList.toggle('on', i === v); b.setAttribute('aria-checked', i === v); });
   } else if (p.choices) {                            // a list
     input = document.createElement('select');
-    p.choices.forEach((name, i) => input.append(new Option(name, i)));
+    choicesFor(p, fx98).forEach((name, i) => input.append(new Option(name, i)));
     input.onchange = () => { paramSet(fx, key, ch, +input.value); changed(); refresh(); };
     set = v => { if (!focused(input)) input.value = v; };
   } else {                                           // a range
@@ -1309,7 +1310,7 @@ function djLinkFor(key) {
 }
 setDjHooks({
   devices: () => devices.map((d, i) => ({key: portKey(d), label: `FM-1 ${i + 1}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc,
-    presets: !!d.info.presets})),
+    presets: !!d.info.presets, fx98: !!d.info.fx98})),
   linkFor: djLinkFor,
   outputFor: key => devices.find(x => portKey(x) === key)?.output || null,
   access: () => ports?.access || null,

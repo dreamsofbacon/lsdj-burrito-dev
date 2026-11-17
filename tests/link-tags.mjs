@@ -27,6 +27,8 @@ function fm1(tags) {
 { /* dev.3: INFO says tags; a LIVE answered late is ignored by its tag, the next LIVE asks at once */
   const f = fm1(true), link = new Link(f.input, f.output);
   assert.equal(infoFrom([1, ...Array(33).fill(0), 3]).tags, true);
+  assert.equal(infoFrom([1, ...Array(33).fill(0), 3]).fx98, false);   /* 0.9.98-dev.10: the new effect choices */
+  assert.equal(infoFrom([1, ...Array(33).fill(0), 16 | 3]).fx98, true);
   assert.equal(link.tagged, false, 'untagged until INFO says so');
   assert.equal((await link.info()).tags, true);
   assert.equal(f.sent[0].tag, undefined, 'INFO itself untagged (it says whether tags work)');

@@ -87,6 +87,8 @@ const decks = [0, 1].map(i => ({i, key: '', kind: '', bpm: master.bpm, clock: nu
 let root = null, ticker = 0, polling = 0, shown = false;
 /* the deck's FM-1 firmware number (998: 0.9.98), 0 for other gear; cached until the FM-1 list changes */
 const fwCache = new Map();
+/* the deck's FM-1 takes the 0.9.98 effect choices (INFO; fx-model.js choicesFor); the virtual decks have them */
+const fx98Of = d => d.kind !== 'fm1' || !!hooks.devices().find(x => x.key === d.key)?.fx98;
 const fwOf = d => {
   if (d.kind !== 'fm1') return 0;
   if (!fwCache.has(d.key)) fwCache.set(d.key, firmwareNumber(hooks.devices().find(x => x.key === d.key)?.fw) || 0);
@@ -1600,7 +1602,7 @@ export function mountDj(box) {
   const fxBox = d => {
     const ab = d.i ? 'b' : 'a';
     d.fxPanel = fxPanel({name: `Deck ${NAMES[d.i]}`, get: () => fxOf(d), set: (k, c, v) => fxEdit(d, k, c, v), mute: () => killShown(d), onFm1: () => d.live?.page ?? null,
-      fw: () => fwOf(d) || Infinity, page: +store.get(`dj-fx-page-${d.i}`, 1), onPage: p => store.set(`dj-fx-page-${d.i}`, String(p)),
+      fw: () => fwOf(d) || Infinity, fx98: () => fx98Of(d), page: +store.get(`dj-fx-page-${d.i}`, 1), onPage: p => store.set(`dj-fx-page-${d.i}`, String(p)),
       actions: [btn('⇱', () => fxPop(d), {className: 'dj-fx-pop', title: 'In its own window (again: back here)', ariaLabel: `Deck ${NAMES[d.i]} FX in its own window`}),
         btn('✕', () => fxOpen(d, false), {className: 'dj-fx-close', title: 'Close the drawer', ariaLabel: `Close deck ${NAMES[d.i]} FX`})]});
     d.ui.fxBox = el('section', {className: `dj-fx dj-fx-${ab}`, ariaLabel: `Deck ${NAMES[d.i]} effects`}, d.fxPanel.el);

@@ -6,7 +6,7 @@
 // - full (in its own window, popout.js: body.popped): the Effects page without the screen, for a monitor of its
 //   own (deck A's effects | the decks | deck B's effects): the wiring (fx-diagram.js), then the Master and the
 //   Channels cards with every page shown, the same markup and look as Perform's (app.js buildFx, index.html).
-import {CHANNELS, PARAM, pagesForFx, paramGet, valueText, effectActive, isMasterPage} from './fx-model.js';
+import {CHANNELS, PARAM, pagesForFx, paramGet, valueText, effectActive, isMasterPage, choicesFor} from './fx-model.js';
 import {fxDiagram} from './fx-diagram.js';
 
 const PER_CHANNEL = new Set(['ch', 'q', 'flags', 'rvch']);
@@ -17,7 +17,7 @@ const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.crea
    firmware's number; mute() -> its channel mutes (the wiring greys them); onFm1() -> the page its knobs are on
    (marked, as Perform marks it), or null; page / onPage: the compact view's page
    (kept by the caller); actions: header buttons */
-export function fxPanel({name, get, set, fw = () => Infinity, mute = () => 0, onFm1 = () => null, page = 1, onPage = () => {}, actions = []}) {
+export function fxPanel({name, get, set, fw = () => Infinity, fx98 = () => true, mute = () => 0, onFm1 = () => null, page = 1, onPage = () => {}, actions = []}) {
   const tabs = el('div', {className: 'seg dj-fx-pages', role: 'tablist', ariaLabel: `${name} effects pages`});
   const body = el('div', {className: 'dj-fx-body'});
   const note = el('p', {className: 'hint dj-fx-note'});
@@ -36,7 +36,7 @@ export function fxPanel({name, get, set, fw = () => Infinity, mute = () => 0, on
 
   const pages = fx => pagesForFx(fx, fw()).map((p, i) => ({...p, i})).filter(p => !p.rv || fx.reverb);
   const usable = ([where, key]) => PARAM[key] && !PARAM[key].live && (where !== 'rvch' || get()?.reverb?.rvSend);
-  const shape = fx => `${fx.v2}${fx.v3}${fx.reverb ? 1 : 0}${fx.reverb?.rvSend ? 1 : 0}${fw()}${page}`;
+  const shape = fx => `${fx.v2}${fx.v3}${fx.reverb ? 1 : 0}${fx.reverb?.rvSend ? 1 : 0}${fw()}${fx98() ? 1 : 0}${page}`;
   function build() {
     const fx = get();
     if (!fx) {
@@ -64,7 +64,7 @@ export function fxPanel({name, get, set, fw = () => Infinity, mute = () => 0, on
       const id = `${name}-${key}-${c}`.replace(/\W+/g, '-');
       const label = chans.length > 1 ? CHANNELS[c] : '';
       const input = p.choices
-        ? el('select', {id, onchange: () => set(key, c, +input.value)}, ...p.choices.map((t, v) => new Option(t, v)))
+        ? el('select', {id, onchange: () => set(key, c, +input.value)}, ...choicesFor(p, fx98()).map((t, v) => new Option(t, v)))
         : el('input', {id, type: 'range', min: 0, max: 127, oninput: () => { set(key, c, +input.value); show(); }});
       input.setAttribute('aria-label', `${name} ${p.name}${label ? ' ' + label : ''}`);
       const out = el('output', {className: 'mono', htmlFor: id});
@@ -121,7 +121,7 @@ export function fxPanel({name, get, set, fw = () => Infinity, mute = () => 0, on
       input.append(...btns);
       show = v => btns.forEach((b, i) => { b.classList.toggle('on', i === v); b.setAttribute('aria-checked', String(i === v)); });
     } else if (p.choices) {
-      input = el('select', {onchange: () => set(key, c, +input.value)}, ...p.choices.map((t, v) => new Option(t, v)));
+      input = el('select', {onchange: () => set(key, c, +input.value)}, ...choicesFor(p, fx98()).map((t, v) => new Option(t, v)));
       show = v => { if (input.ownerDocument.activeElement !== input) input.value = v; };
     } else {
       input = el('input', {type: 'range', min: 0, max: 127, oninput: () => { set(key, c, +input.value); const fx = get(); if (fx) out.textContent = valueText(fx, key, c); }});
