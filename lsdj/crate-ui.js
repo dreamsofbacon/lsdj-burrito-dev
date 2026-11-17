@@ -142,7 +142,7 @@ export async function loadOnto(id, i, slot = null) {
   busyDeck = i; draw();
   const show = (text, n, t) => { dj.loading?.(i, text, n, t); say(`Deck ${d.name}: ${text}`, 'hint'); };
   const leave = e => { e.preventDefault(); e.returnValue = ''; };
-  let wake = null, released = false, failed = false;
+  let wake = null, released = false, failed = false, backKey = null;
   try {
     if (!rom) {
       dj.stop?.(i);
@@ -188,13 +188,18 @@ export async function loadOnto(id, i, slot = null) {
     await wait(1500);
     const fresh = (await app.rescan()).filter(x => !others.has(x.key));
     const back = !restarted ? {key: d.key} : r.confirmed && fresh.length === 1 ? fresh[0] : null;
-    logEvent(`Deck ${d.name}: installed ${r.id}${restarted ? `; FM-1s found after its restart: ${fresh.length}${r.confirmed ? '' : ' (another went away)'}` : ' (it already had this LSDj)'}.`);
+    /* (fresh: FM-1s on ports that weren't there before the install, not all those plugged in: "found: 1" with two
+       plugged in read as one missing, Colin's DJ test) */
+    const after = !restarted ? ' (it already had this LSDj)'
+      : fresh.length === 1 ? `; it restarted on new ports (${fresh[0].key})`
+      : `; FM-1s on new ports after its restart: ${fresh.length} (one expected)`;
+    logEvent(`Deck ${d.name}: installed ${r.id}${after}${r.confirmed ? '' : ' (another FM-1 went away meanwhile)'}.`);
     if (!back) {
       say(`Installed ${r.id}, but the page can't tell which FM-1 restarted${r.confirmed ? '' : ' (another FM-1 was unplugged meanwhile)'}. ` +
         `Choose it for deck ${d.name}${sav ? ', then load the songs' : ''}.`, 'warn');
       return;
     }
-    dj.assign?.(i, back.key);
+    dj.assign?.(i, back.key); backKey = back.key;
     if (sav) {
       show('Sending the songs…');
       await app.sendSave(back.key, sav, label, (n, t) => show('Sending the songs…', n, t));
@@ -213,7 +218,7 @@ export async function loadOnto(id, i, slot = null) {
     removeEventListener('beforeunload', leave);
     try { await wake?.release(); } catch { /* gone */ }
     busyDeck = -1; dj.loading?.(i, null); draw();
-    if (released) app.settled?.(failed ? `The DJ crate stopped on deck ${d.name}'s FM-1 (see the Log).` : `The DJ crate is done with deck ${d.name}'s FM-1.`);
+    if (released) app.settled?.(failed ? `The DJ crate stopped on deck ${d.name}'s FM-1 (see the Log).` : `The DJ crate is done with deck ${d.name}'s FM-1.`, backKey);
     document.dispatchEvent(new Event('firmware-install-state'));
   }
 }

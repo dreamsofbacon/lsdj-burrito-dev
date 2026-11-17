@@ -9,6 +9,7 @@ import {showDeviceTheme, setMatching, matching} from './page-theme.js';
 import {setBeforeInstall, installing, installTarget, usbMidiUnavailable} from './install-ui.js';
 import {setCrateHooks} from './crate-ui.js';
 import {logEvent} from './conn-log.js';
+import {fm1Numbers} from './fm1-numbers.js';
 import {CHANNELS, pagesForFx, PARAM, paramGet, paramSet, valueText, channelSummary, unpackFx, packFx, unpackReverb, packReverb, packReverbSends, PRESETS, THEMES, COLOR_NAMES, toHex, fromHex,
         SETTINGS, unpackSettings, packSettings, MIDI_SETTINGS, MIDI_CC_MAP, unpackMidi, packMidi, CUSTOM_THEME, isMasterPage,
         firmwareNumber, FEATURES, unpackFeatures, packFeatures, effectActive, choicesFor} from './fx-model.js';
@@ -245,6 +246,8 @@ try { follow = localStorage.getItem('lsdj-burrito-follow') === '1'; } catch { /*
 const sameDev = (a, b) => !!a && !!b && a.input === b.input && a.output === b.output;
 const liveKey = l => [l.page, l.cursor, l.bpm, l.mute, l.freeze, l.playing, ...l.fx].join();
 const portKey = d => String(d.output.id ?? d.name);
+const numbers = fm1Numbers();   /* (fm1-numbers.js: a number each FM-1 keeps, not its place by port) */
+const fm1No = d => numbers.no(d) ?? devices.indexOf(d) + 1;
 let searchAgain = 0;
 async function scan() {
   if (!ports?.access || connecting || busy || installing()) return devices;
@@ -256,6 +259,7 @@ async function scan() {
       const old = devices.find(o => sameDev(o, f));
       return old ? Object.assign(old, {info: f.info}) : f;
     }).sort((a, b) => portKey(a).localeCompare(portKey(b)));
+    devices = numbers.renumber(devices);
     for (const d of [...padLinks.keys()]) if (!devices.includes(d)) closePadLink(d);
     /* one that left the list while its ports are still plugged in did not answer the search (busy, or starting):
        searched again in a moment, a few times, so a DJ deck on it gets it back */
@@ -342,7 +346,7 @@ function drawGrid() {
   shown.forEach((d, i) => {
     const t = tiles.get(d), on = connected && sameDev(d, current);
     t.el.classList.toggle('on', on); t.el.setAttribute('aria-pressed', String(on));
-    t.caption.textContent = `${i + 1}: ${d.info.title || 'no LSDj'}`; t.el.title = devLabel(d, i) + (on ? ' (in use)' : ': click to use it');
+    t.caption.textContent = `${fm1No(d)}: ${d.info.title || 'no LSDj'}`; t.el.title = devLabel(d, i) + (on ? ' (in use)' : ': click to use it');
   });
 }
 function watch(d) {
@@ -402,7 +406,7 @@ function maybeFollow(d) {
     void switchTo(d);
   }, CONFIRM_MS);
 }
-function devLabel(d, i) { return `FM-1 ${i + 1}: ${d.info.title || 'no LSDj'} · ${d.info.firmware} (${d.name})`; }
+function devLabel(d) { return `FM-1 ${fm1No(d)}: ${d.info.title || 'no LSDj'} · ${d.info.firmware} (${d.name})`; }
 function drawDevPick() {
   drawGrid(); drawPadTargets(); refreshSync(); djDevicesChanged();
   const choices = devices.map((d, i) => [String(i), devLabel(d, i)]);
@@ -472,7 +476,7 @@ function setSync(mode) {
 function drawSync(note) {
   $('sync-row').hidden = !connected && !devices.length;
   const sel = $('sync-mode');
-  const opts = [['off', 'Off'], ['page', 'This page'], ...(devices.length >= 2 ? devices.map((d, i) => [portKey(d), `FM-1 ${i + 1} leads (${d.info.title || 'no LSDj'})`]) : [])];
+  const opts = [['off', 'Off'], ['page', 'This page'], ...(devices.length >= 2 ? devices.map(d => [portKey(d), `FM-1 ${fm1No(d)} leads (${d.info.title || 'no LSDj'})`]) : [])];
   sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
   sel.value = syncMode;
   $('sync-page').hidden = syncMode !== 'page';
@@ -1309,7 +1313,7 @@ function djLinkFor(key) {
   return l;
 }
 setDjHooks({
-  devices: () => devices.map((d, i) => ({key: portKey(d), label: `FM-1 ${i + 1}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc,
+  devices: () => devices.map(d => ({key: portKey(d), label: `FM-1 ${fm1No(d)}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc,
     presets: !!d.info.presets, fx98: !!d.info.fx98})),
   linkFor: djLinkFor,
   outputFor: key => devices.find(x => portKey(x) === key)?.output || null,
@@ -1358,11 +1362,13 @@ setCrateHooks({
   },
   /* the crate let go of an FM-1 and is done with it (installed or not): "installing" no longer stays on the page.
      The DJ layout: the header takes an FM-1 again (the one used before, else the first found) */
-  settled: async text => {
+  settled: async (text, key = null) => {
     if (connected) return;
     if (djHeld) {
       djHeld = false;
-      const found = await scan(), d = choose(found) || found[0];
+      /* the FM-1 just loaded first: taking another one for the header closes the link its deck plays on, and that deck
+         said "Disconnected from the FM-1" right as the other came back (Colin's DJ test) */
+      const found = await scan(), d = found.find(x => portKey(x) === key) || choose(found) || found[0];
       if (d && !connected) await connectTo(d.input, d.output, 'USB', {fast: true});
       if (connected) return;
       enable(false);
