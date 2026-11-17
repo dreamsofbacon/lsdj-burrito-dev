@@ -9,7 +9,7 @@ import {labelEditor, paintLabel, shrinkImage, imageUrl, isHex} from './cart-labe
 import {opens} from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary} from './kit-library.js';
 import {listKits, crc32} from './lsdj-rom.js';
-import {withOpenSong, savBody} from './lsdj-sav.js';
+import {withOpenSong, savBody, HEADER, HEADER_SIZE} from './lsdj-sav.js';
 import {openCartMaker} from './cart-maker.js';
 import {logEvent} from './conn-log.js';
 import {loadTemplate, prepareLsdjFirmware} from './lsdj-firmware.js';
@@ -72,17 +72,26 @@ async function openFiles(list) {
   }
 }
 
-/* after songs are sent: does that FM-1 hold them once LSDj has started on them? (INFO: its save's checksum, its LSDj
-   and firmware) -> null when it does, else what to say. The page said "has" as soon as the transfer ended before;
-   an FM-1 that kept or changed its songs (another LSDj, older firmware) said nothing. */
-async function checkHeld(key, sav, deck) {
-  await wait(2500);   /* (LSDj restarted on the songs) */
-  let info = null;
-  try { info = await app.info?.(key); } catch (e) { return `couldn't ask that FM-1 what it holds now (${e.message})`; }
-  if (!info || info.saveCrc === crc32(sav)) return null;
+/* after songs are sent: does that FM-1 hold them once LSDj has started on them? -> {bad: what to say} when it doesn't,
+   else {crc: its save's checksum now (the deck's badge)}. The page said "has" as soon as the transfer ended before;
+   an FM-1 that kept or changed its songs (another LSDj, older firmware) said nothing.
+   The whole save's checksum is no test: COMMIT already checked every byte arrived, and LSDj then rewrites its working
+   song (the save's first 32 KiB) as it starts, so it differed after every load that worked (Colin's DJ test,
+   2026-11-17: "doesn't hold the songs sent" with the song playing). The songs' header (names, versions, the open song,
+   the block table) is read back instead: an LSDj that kept its own songs or cleared them changes it. */
+const hex8 = n => (n >>> 0).toString(16).padStart(8, '0');
+export async function checkHeld(key, sav, deck, hooks = app, pause = wait) {
+  await pause(2500);   /* (LSDj restarted on the songs) */
+  let info = null, head = null;
+  try { info = await hooks.info?.(key); } catch (e) { return {bad: `couldn't ask that FM-1 what it holds now (${e.message})`}; }
+  if (!info || info.saveCrc === crc32(sav)) return {crc: info?.saveCrc ?? null};
+  try { head = await hooks.readSaveAt(key, HEADER, HEADER_SIZE); } catch (e) { return {bad: `couldn't read back what that FM-1 holds now (${e.message})`}; }
+  const at = head.findIndex((b, i) => b !== sav[HEADER + i]);
+  if (at < 0) return {crc: info.saveCrc};
   const what = `${info.title || 'its LSDj'}, firmware ${info.firmware || '?'}`;
-  logEvent(`Deck ${deck}: songs sent, but the FM-1 (${what}) holds different ones (checksum ${info.saveCrc.toString(16)}, sent ${crc32(sav).toString(16)}).`);
-  return `the FM-1 (${what}) doesn't hold the songs sent: its LSDj may have kept or changed them. See the Log`;
+  logEvent(`Deck ${deck}: songs sent, but the FM-1 (${what}) holds different ones (its song list differs from byte 0x${(HEADER + at).toString(16)}; ` +
+    `whole save checksum ${hex8(info.saveCrc)}, sent ${hex8(crc32(sav))}).`);
+  return {bad: `the FM-1 (${what}) doesn't hold the songs sent: its LSDj may have kept or changed them. See the Log`};
 }
 const fm1Decks = () => (dj.decks?.() || []).filter(d => d.kind === 'fm1' && d.key != null);
 async function grab(d, withRom) {
@@ -129,7 +138,7 @@ export async function loadOnto(id, i, slot = null) {
     try { const song = describe(item, bytesOf).songList.find(x => x.slot === slot); sav = withOpenSong(sav, slot); label = `${item.name} › ${song?.name ?? slot}`; }
     catch (e) { draw(); return say(`${item.name}: ${e.message}`, 'bad'); }
   }
-  const loaded = key => { loadedOn[key] = {id: item.id, slot, crc: crc32(sav)}; store.set('dj-crate-on', JSON.stringify(loadedOn)); };
+  const loaded = (key, crc) => { loadedOn[key] = {id: item.id, slot, crc: crc ?? crc32(sav)}; store.set('dj-crate-on', JSON.stringify(loadedOn)); };
   busyDeck = i; draw();
   const show = (text, n, t) => { dj.loading?.(i, text, n, t); say(`Deck ${d.name}: ${text}`, 'hint'); };
   const leave = e => { e.preventDefault(); e.returnValue = ''; };
@@ -140,9 +149,9 @@ export async function loadOnto(id, i, slot = null) {
       show('Sending the songs…');
       await app.sendSave(d.key, sav, label, (n, t) => show('Sending the songs…', n, t));
       show('Checking the FM-1 holds them…');
-      const bad = await checkHeld(d.key, sav, d.name);
+      const {bad, crc} = await checkHeld(d.key, sav, d.name);
       if (bad) return say(`Deck ${d.name}: sent "${label}", but ${bad}.`, 'bad');
-      loaded(d.key);
+      loaded(d.key, crc);
       say(`Deck ${d.name} has "${label}".`, 'ok');
       return;
     }
@@ -190,9 +199,9 @@ export async function loadOnto(id, i, slot = null) {
       show('Sending the songs…');
       await app.sendSave(back.key, sav, label, (n, t) => show('Sending the songs…', n, t));
       show('Checking the FM-1 holds them…');
-      const bad = await checkHeld(back.key, sav, d.name);
+      const {bad, crc} = await checkHeld(back.key, sav, d.name);
       if (bad) return say(`Deck ${d.name}: installed ${r.id} and sent "${label}", but ${bad}.`, 'bad');
-      loaded(back.key);
+      loaded(back.key, crc);
     }
     say(`Deck ${d.name} has "${label}" (${r.id}).`, 'ok');
   } catch (e) {

@@ -2,7 +2,7 @@
 // The page: connect to the FM-1's running LSDJ Burrito firmware (lsdj/link.js)
 // for live effects, songs, colours and settings. Never writes firmware.
 import {startGamepad, loadMaps, mapFor, saveMap, loadPick, savePick, assign, takenFrom, isDefaultMap, defaultMapFor, inputName, GB_ORDER, SLOTS} from './gamepad.js';
-import {Link, midiPorts, findFm1s, LinkError, SAVE_SIZE, crc32, sameFm1} from './link.js';
+import {Link, midiPorts, findFm1s, LinkError, SAVE_SIZE, CHUNK, crc32, sameFm1} from './link.js';
 import {confirmSaveImport} from './save-file.js';
 import {mountSongsUi, setSongsHooks, drawSongsDevices, songsState} from './songs-ui.js';
 import {showDeviceTheme, setMatching, matching} from './page-theme.js';
@@ -1346,13 +1346,33 @@ setCrateHooks({
     const d = devOf(key);
     if (!d) return;
     if (connected && !virtual && sameDev(d, current)) {   /* as before Install's install, for this FM-1 only */
-      stopPoll(); link?.close(); link = null; connected = false; lostAt = 0;
-      enable(false); say('device', 'Disconnected: the DJ crate is installing on this FM-1. Connect again when it is done.', 'hint');
+      stopPoll(); mirror?.stop(); mirror = null; link?.close(); link = null; connected = false; lostAt = 0;
+      /* the DJ layout stays up: only the deck being loaded waits (its own loading bar), the other plays on with every
+         control. It went to "Connect your FM-1" for a minute mid-set when the deck loaded was the FM-1 in the header
+         (Colin's DJ test, 2026-11-17). The header connects again by itself once the crate is done (settled). */
+      if (stageMode === 'dj') { djHeld = true; say('device', 'The DJ crate is installing on one FM-1; the page connects again when it is done.', 'hint'); }
+      else { enable(false); say('device', 'Disconnected: the DJ crate is installing on this FM-1. Connect again when it is done.', 'hint'); }
     }
     unwatch(d); closePadLink(d);
   },
-  /* the crate let go of an FM-1 and is done with it (installed or not): "installing" no longer stays on the page */
-  settled: text => { if (!connected) say('device', `${text} Connect again to use it here.`, 'hint'); },
+  /* the crate let go of an FM-1 and is done with it (installed or not): "installing" no longer stays on the page.
+     The DJ layout: the header takes an FM-1 again (the one used before, else the first found) */
+  settled: async text => {
+    if (connected) return;
+    if (djHeld) {
+      djHeld = false;
+      const found = await scan(), d = choose(found) || found[0];
+      if (d && !connected) await connectTo(d.input, d.output, 'USB', {fast: true});
+      if (connected) return;
+      enable(false);
+    }
+    say('device', `${text} Connect again to use it here.`, 'hint');
+  },
+  readSaveAt: async (key, off, n) => {
+    const l = crateLink(key), out = new Uint8Array(n);
+    for (let o = 0; o < n; o += CHUNK) out.set((await l.saveRead(off + o)).subarray(0, Math.min(CHUNK, n - o)), o);
+    return out;
+  },
   rescan: async () => (await scan()).map(d => ({key: portKey(d), title: d.info.title})),
   readSave: (key, pr) => crateLink(key).exportSave(pr),
   readRom: async (key, pr) => romFromSlot(await crateLink(key).exportCartridge(pr)),
@@ -1361,11 +1381,12 @@ setCrateHooks({
   volumeFull: async key => { try { await djLinkFor(key)?.volumeSet(127); } catch { /* older firmware, or gone: full at its next start */ } },
 }, {});
 /* Effects | Compact | DJ. Compact is the Effects layout (stageMode 'fx') with every effect in one grid (body.fxgrid) */
-let stageMode = 'fx', fxGrid = false;
+let stageMode = 'fx', fxGrid = false, djHeld = false;   /* djHeld: the DJ crate has the header's FM-1, the layout kept up */
 try { const s = localStorage.getItem('lsdj-burrito-stage'); if (s === 'dj') stageMode = 'dj'; else if (s === 'grid') fxGrid = true; } catch { /* Effects */ }
 function setStageMode(m) {
   stageMode = m === 'dj' ? 'dj' : 'fx';
   fxGrid = m === 'grid';
+  if (djHeld && stageMode !== 'dj' && !connected) enable(false);   /* (Effects with no FM-1 behind them while the crate installs) */
   const shown = fxGrid ? 'grid' : stageMode;
   try { localStorage.setItem('lsdj-burrito-stage', shown); } catch { /* this visit only */ }
   document.body.classList.toggle('dj', stageMode === 'dj');
