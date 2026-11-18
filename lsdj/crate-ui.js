@@ -98,8 +98,8 @@ async function grab(d, withRom) {
   if (busyDeck >= 0) return;
   busyDeck = d.i; draw();
   try {
-    const sav = await app.readSave(d.key, (n, t) => dj.loading?.(d.i, 'Copying its songs…', n, t));
-    const rom = withRom ? await app.readRom(d.key, (n, t) => dj.loading?.(d.i, 'Copying its LSDj…', n, t)) : null;
+    const sav = await app.readSave(d.key, (n, t) => dj.loading?.(d.i, withRom ? 'Copying its songs (1 of 2)…' : 'Copying its songs…', n, t));
+    const rom = withRom ? await app.readRom(d.key, (n, t) => dj.loading?.(d.i, 'Copying its LSDj (2 of 2)…', n, t)) : null;
     const title = (await app.info?.(d.key).catch(() => null))?.title;
     await addToCrate({name: `Deck ${d.name}${title ? ` ${title}` : ''} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`, rom, sav});
     say(`Deck ${d.name}'s ${withRom ? 'LSDj and songs are' : 'songs are'} in the crate.`, 'ok');

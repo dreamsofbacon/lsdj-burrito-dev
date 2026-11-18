@@ -27,6 +27,7 @@ import {fxPanel} from './dj-fx.js';
 import {popOut, bringBack, isOut} from './popout.js';
 import {pageColours} from './page-theme.js';
 import {mountCrate, setCrateHooks, dropOnDeck, crateRedraw, CRATE_TYPE} from './crate-ui.js';
+import {timeLeft} from './crate.js';
 import {savHeader, HEADER, HEADER_SIZE, BLOCK_COUNT} from './lsdj-sav.js';
 import {readOffsets as keyReads, songKeys} from './song-key.js';
 import {logEvent, logText, clearLog} from './conn-log.js';
@@ -1791,10 +1792,13 @@ setCrateHooks({}, {
   avoid: i => [...decks.filter(d => d.i !== i && d.key && d.kind !== 'fm1').map(d => d.key),
     mixer.inId, mixer.outId, master.source !== 'page' ? master.source : ''].filter(Boolean),
   loading: (i, text, n, t) => {
-    const u = decks[i].ui;
+    const u = decks[i].ui, d = decks[i];
     if (!u) return;
     u.loadEl.hidden = text == null; u.box.classList.toggle('loading', text != null);
-    u.loadText.textContent = text || '';
+    /* the time left (crate.js timeLeft), from when this step began */
+    if (text == null || text !== d.loadStep?.text || !t) d.loadStep = text == null || !t ? null : {text, at: now(), n: n || 0};
+    const left = d.loadStep ? timeLeft(d.loadStep, n, t, now()) : '';
+    u.loadText.textContent = (text || '') + (left ? ` ${left}` : '');
     u.loadBar.hidden = !t; if (t) { u.loadBar.max = t; u.loadBar.value = Math.min(n, t); }
   },
 });

@@ -135,4 +135,15 @@ assert.equal(describe({sav: S2}, id => lib[id]).missing, true);
   assert.deepEqual(songBytes(p, 0), song(3));
   assert.throws(() => withOpenSong(two, 7), /No song in slot 7/);
 }
+/* the time left of a transfer */
+{
+  const {timeLeft} = await import('../lsdj/crate.js');
+  const t0 = {at: 0, n: 0};
+  assert.equal(timeLeft(t0, 1000, 100000, 1000), '', 'too early (1 s)');
+  assert.equal(timeLeft(t0, 2000, 100000, 3000), '', 'too little done (2 %)');
+  assert.equal(timeLeft(t0, 10000, 100000, 3000), 'about 25 s left');   /* 27 s, by 5 s */
+  assert.equal(timeLeft(t0, 10000, 100000, 10000), 'about 1 min 30 s left');
+  assert.equal(timeLeft(t0, 99990, 100000, 10000), '', 'under a second: nothing');
+  assert.equal(timeLeft({at: 5000, n: 50000}, 50000, 100000, 9000), '', 'nothing done since: nothing');
+}
 console.log('crate: PASS (file kinds (a save with a 16-byte footer, LSDJ 3.x-4.1), items, pairing, saved list, card text, colours, your order, search and sort, song formats against an LSDj, a chosen song opened)');

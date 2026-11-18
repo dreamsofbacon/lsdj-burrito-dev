@@ -9,6 +9,15 @@ import {lsdjVersion, versionText, lsdjLabel, lsdjFormat, songFormat, opens} from
 
 export const KEY = 'dj-crate';
 
+/* the time left of a transfer from how far it got since it began (since: {at ms, n}): "about 40 s left", or '' while
+   too early to tell (under 2 s, or under 3 %). A grab took ~1m45s with no idea how long (Colin's DJ test). */
+export function timeLeft(since, n, t, at) {
+  if (!since || !t || n <= since.n || at - since.at < 2000 || n / t < 0.03) return '';
+  const s = (t - n) * (at - since.at) / (n - since.n) / 1000;
+  if (s < 1) return '';
+  return s < 60 ? `about ${Math.max(5, Math.round(s / 5) * 5)} s left` : `about ${Math.floor(s / 60)} min ${String(Math.round(s % 60 / 10) * 10).padStart(2, '0')} s left`.replace(' 60 s', ' 50 s');
+}
+
 /* a file's kind from its bytes: 'sav' | 'rom' | null */
 export function fileKind(bytes) {
   if (!(bytes instanceof Uint8Array)) return null;
