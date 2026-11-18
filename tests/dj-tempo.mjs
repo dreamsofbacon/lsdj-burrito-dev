@@ -2,7 +2,7 @@
 // lsdj/dj-tempo.js: the DJ layout's tempo controls (node tests/dj-tempo.mjs).
 import assert from 'node:assert/strict';
 import {roundBpm, stepSize, stepBpm, repeater, repeatSize, HOLD_MS, REPEAT_MS, scaleBpm, glide, glideAt, GLIDE_BARS,
-  PITCH_RANGES, rangeText, pickRange, pitchOf, bpmOfPitch, PADS, loadPads, savePads} from '../lsdj/dj-tempo.js';
+  PITCH_RANGES, rangeText, pickRange, pitchOf, pitchFree, rangeFor, bpmOfPitch, PADS, loadPads, savePads} from '../lsdj/dj-tempo.js';
 import {BAR} from '../lsdj/dj.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
@@ -67,6 +67,14 @@ assert.equal(pitchOf(120, 120, 800), 0);
 assert.equal(pitchOf(126, 120, 800), 500);
 assert.equal(pitchOf(180, 120, 800), 800, 'past the range: its end');
 assert.equal(pitchOf(180, 120, 5000), 5000);
+/* the percentage as it is, and the range that holds it (Colin's DJ test: 240 BPM against 174 read -8.00 %) */
+assert.equal(pitchFree(174, 240), -2750);
+assert.equal(pitchFree(126, 120), 500);
+assert.equal(rangeFor(500, 800), 800, 'within the chosen range: kept');
+assert.equal(rangeFor(-1200, 800), 1600);
+assert.equal(rangeFor(-2750, 800), 5000);
+assert.equal(rangeFor(9000, 800), 5000, 'past the widest: the widest');
+assert.equal(rangeFor(100, 1600), 1600, 'never narrower than the one chosen');
 assert.equal(pitchOf(60, 120, 5000), -5000);
 assert.ok(near(bpmOfPitch(500, 120), 126)); assert.ok(near(bpmOfPitch(-5000, 120), 60));
 assert.equal(bpmOfPitch(5000, 250), 295, 'clamped');

@@ -21,7 +21,7 @@ import {startClock, clampBpm, PPQN, CLOCK, START, CONTINUE, STOP, LOOKAHEAD_MS, 
 import {sameFm1, OP} from './link.js';
 import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
 import {PRESETS, preset, readMidi, actionFor, out, learnRule, saveLearned, loadLearned} from './mixers.js';
-import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
+import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, pitchFree, rangeFor, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
 import {unpackFx, packFx, unpackReverb, packReverb, packReverbSends, CHANNELS, firmwareNumber, unpackSettings, PRESETS as THEME_COLOURS, CUSTOM_THEME, THEMES, unpackMidi, packMidi, paramSet, PARAM} from './fx-model.js';
 import {fxPanel} from './dj-fx.js';
 import {popOut, bringBack, isOut} from './popout.js';
@@ -83,7 +83,7 @@ const decks = [0, 1].map(i => ({i, key: '', kind: '', bpm: master.bpm, clock: nu
   kill: 0, killOnBar: store.get('dj-killbar', '0') === '1', filter: 0, filterBy: 'fm1', throwBy: 'fm1', row: 0, sendTimer: 0, ui: null,
   level: null, levelSent: 127, levelBusy: false, scr: null, scrLink: null, scrOk: true,
   view: store.get(`dj-view-${i}`, 'screen'), map: null, mapFrom: -1, mapAt: 0, mapFill: null, abSpeed: 0,
-  range: pickRange(store.get(`dj-range-${i}`, 800))}));
+  range: pickRange(store.get(`dj-range-${i}`, 800)), rangeChosen: pickRange(store.get(`dj-range-${i}`, 800))}));   /* (rangeChosen: Range's; range widens past it to hold the tempo) */
 let root = null, ticker = 0, polling = 0, shown = false;
 /* the deck's FM-1 firmware number (998: 0.9.98), 0 for other gear; cached until the FM-1 list changes */
 const fwCache = new Map();
@@ -211,8 +211,11 @@ function glideTick(t) {
 }
 /* the tempo fader's range (±8, ±16, ±50 %): the next one */
 function nextRange(d) {
-  d.range = PITCH_RANGES[(PITCH_RANGES.indexOf(d.range) + 1) % PITCH_RANGES.length];
-  store.set(`dj-range-${d.i}`, String(d.range));
+  setRange(d, PITCH_RANGES[(PITCH_RANGES.indexOf(d.range) + 1) % PITCH_RANGES.length]);
+  d.rangeChosen = d.range; store.set(`dj-range-${d.i}`, String(d.range));
+}
+function setRange(d, r) {
+  d.range = r;
   const u = d.ui;
   if (u?.pitch) { u.pitch.min = -d.range; u.pitch.max = d.range; u.pitch.value = pitchValue(d); }
   if (u?.range) u.range.textContent = rangeText(d.range);
@@ -276,7 +279,7 @@ async function assign(d, value) {
   d.savHead = null; d.sav = null; d.savMatch = null; d.savAt = 0; d.seenPlaying = false; d.idlePolls = 0;
   d.song = null; d.songRead = null; d.songAt = null; d.songKeys = null;   /* (songAt null: never read) */
   d.presets = null; d.presetsAt = 0; drawPresets(d);
-  d.syncTried = null; d.syncSetOnce = false; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
+  d.syncTried = null; d.syncSetOnce = false; d.songBpm = null; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
   d.level = null; d.levelSent = 127; d.scrOk = true; d.themeAt = 0; d.map = null; d.mapFrom = -1; d.mapFill = null;
   paintDeck(d, null);
   if (value) { const [kind, ...k] = value.split(':'); d.kind = kind; d.key = k.join(':'); }
@@ -407,6 +410,21 @@ const nudge = (d, dir) => {
   d.nudging = !!dir;
   deckBend(d, dir ? 1 + dir * NUDGE : 1);
 };
+/* another song on the deck's FM-1 (songs sent, another LSDj, a song opened there): its own TEMPO changes, and a deck
+   that's stopped and not synced takes it, as a new track plays at its own tempo. It kept the last song's tempo before
+   (Colin's DJ test, 2026-11-17: 133 BPM at -8 % with a 240 BPM song loaded, until SYNC). Playing or synced: kept. */
+function songTempo(d) {
+  const b = d.live?.bpm, was = d.songBpm;
+  if (!b) return;
+  d.songBpm = b;
+  /* (the crate's load: songLoaded, also after an install gives the deck its FM-1 again; a deck only getting its FM-1
+     back after a hiccup keeps its tempo) */
+  if (!d.adoptSong && (was == null || b === was)) return;
+  d.adoptSong = false;
+  if (d.synced || playingNow(d)) return;
+  setDeckBpm(d, b);
+  say(`Deck ${NAMES[d.i]}: its song's tempo is ${b} BPM now; the deck plays it at that.`);
+}
 /* the deck's tempo typed (or Whole BPM): the numbers only, as setMasterBpm; it lets go of Sync */
 function setDeckBpm(d, b) {
   if (d.synced) setSynced(d, false);
@@ -840,6 +858,7 @@ async function pollDeck(d) {
   try {
     const asked = now();
     d.live = await l.live(); d.live.askedAt = asked;   /* (when it was asked: killSettle trusts only a fresh one) */
+    songTempo(d);
     fm1Stopped(d); ownAnchor(d); adoptLiveFx(d); killSettle(d);
     await lsdjSync(d, l);
     await djKeys(d, l);
@@ -1437,7 +1456,10 @@ function tick() {
     const own = ph == null ? fm1Row(d) : null;
     setText(u.bpm, own != null ? String(d.live.bpm) : bpmText(d.bpm * (d.clock?.factor || 1)));
     /* the pitch against the master: the fader (unless held) and its percentage */
-    const pv = pitchValue(d), pt = `${pv > 0 ? '+' : pv < 0 ? '−' : '±'}${(Math.abs(pv) / 100).toFixed(2)} %`;
+    /* the percentage as it is; the fader's range widens to hold it (not kept: the one chosen comes back with Range) */
+    const pf = pitchFree(d.bpm, masterBpm()), want = rangeFor(pf, d.rangeChosen);
+    if (want !== d.range && !u.pitchHeld) setRange(d, want);
+    const pv = pitchValue(d), pt = `${pf > 0 ? '+' : pf < 0 ? '−' : '±'}${(Math.abs(pf) / 100).toFixed(2)} %`;
     if (u.pitchTxt && u.pitchTxt.textContent !== pt) u.pitchTxt.textContent = pt;
     if (u.pitch && !u.pitchHeld && u.pitch.ownerDocument.activeElement !== u.pitch && +u.pitch.value !== pv) u.pitch.value = pv;
     const gap = offset(ph, m.phase);
@@ -1737,6 +1759,7 @@ setCrateHooks({}, {
   held: i => heldSav(decks[i])?.crc ?? null,   /* (the crate's ON A / ON B: the checksum of the .sav that deck's FM-1 holds) */
   stop: i => { const d = decks[i]; d.clock?.stop(); setSynced(d, false); deckBend(d, 1); d.nudging = false; draw(); },
   assign: (i, key) => assign(decks[i], key ? `fm1:${key}` : ''),
+  songLoaded: i => { if (decks[i]) decks[i].adoptSong = true; },   /* (its tempo from the next poll: songTempo) */
   avoid: i => [...decks.filter(d => d.i !== i && d.key && d.kind !== 'fm1').map(d => d.key),
     mixer.inId, mixer.outId, master.source !== 'page' ? master.source : ''].filter(Boolean),
   loading: (i, text, n, t) => {

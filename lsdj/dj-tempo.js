@@ -60,6 +60,11 @@ export const PITCH_RANGES = [800, 1600, 5000];
 export const rangeText = r => `±${r / 100} %`;
 export const pickRange = r => PITCH_RANGES.includes(+r) ? +r : PITCH_RANGES[0];
 export const pitchOf = (bpm, master, range) => Math.max(-range, Math.min(range, Math.round((bpm / master - 1) * 10000)));
+/* the same, not held to a range: what the deck's percentage says (held to the fader's ±8 %, a deck 27 % off read
+   "-8.00 %": Colin's DJ test, 2026-11-17) */
+export const pitchFree = (bpm, master) => Math.round((bpm / master - 1) * 10000);
+/* the smallest range that holds a pitch (at least the one chosen), or the widest */
+export const rangeFor = (pitch, range) => PITCH_RANGES.find(r => r >= range && Math.abs(pitch) <= r) ?? PITCH_RANGES[PITCH_RANGES.length - 1];
 export const bpmOfPitch = (v, master) => clampBpm(master * (1 + v / 10000));
 
 /* Tempo memory pads: PADS tempos (null: empty), kept as JSON */

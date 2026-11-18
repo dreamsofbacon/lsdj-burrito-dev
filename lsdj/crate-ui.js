@@ -151,7 +151,7 @@ export async function loadOnto(id, i, slot = null) {
       show('Checking the FM-1 holds them…');
       const {bad, crc} = await checkHeld(d.key, sav, d.name);
       if (bad) return say(`Deck ${d.name}: sent "${label}", but ${bad}.`, 'bad');
-      loaded(d.key, crc);
+      loaded(d.key, crc); dj.songLoaded?.(i);
       say(`Deck ${d.name} has "${label}".`, 'ok');
       return;
     }
@@ -208,6 +208,7 @@ export async function loadOnto(id, i, slot = null) {
       if (bad) return say(`Deck ${d.name}: installed ${r.id} and sent "${label}", but ${bad}.`, 'bad');
       loaded(back.key, crc);
     }
+    dj.songLoaded?.(i);
     say(`Deck ${d.name} has "${label}" (${r.id}).`, 'ok');
   } catch (e) {
     setInstallTarget(null);
