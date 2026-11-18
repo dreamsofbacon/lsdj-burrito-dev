@@ -13,7 +13,8 @@ export const OP = {INFO: 0x01, READ: 0x02, BEGIN: 0x03, CHUNK: 0x04, COMMIT: 0x0
   SCREEN_SYNC: 0x27, SCREEN_PIXELS: 0x28, SCREEN_FRAME: 0x29, REVERB_GET: 0x2A, REVERB_SET: 0x2B, PAD_SET: 0x2C,
   REVERB_SENDS_GET: 0x2D, REVERB_SENDS_SET: 0x2E, VOLUME_SET: 0x2F, SEQ_SET: 0x30, SONG_ROWS: 0x31, SYNC_SET: 0x32,
   DJ_DECK: 0x33, DJ_KEY: 0x34,
-  PRESET_LIST: 0x35, PRESET_GET: 0x36, PRESET_PUT: 0x37, PRESET_LOAD: 0x38, PRESET_SAVE: 0x39};
+  PRESET_LIST: 0x35, PRESET_GET: 0x36, PRESET_PUT: 0x37, PRESET_LOAD: 0x38, PRESET_SAVE: 0x39,
+  READ_STREAM: 0x3A, STREAM_DATA: 0x3B};
 export const STATUS = ['ok', 'bad request', 'wrong state', 'checksum mismatch', 'flash error'];
 export const CHUNK = 128;
 export const SAVE_SIZE = 131072;
@@ -86,6 +87,10 @@ export class Link {
       if (m[0] === 0xF0 && m[1] === 0x7D && m[2] === 0x47 && m[3] === 0x53) this.heard = Date.now();
       if (m.length > 7 && (m[4] === OP.SCREEN_PIXELS || m[4] === OP.SCREEN_FRAME) && m[0] === 0xF0 && m[1] === 0x7D && m[2] === 0x47 && m[3] === 0x53) {
         this.onPixels?.(m); return;
+      }
+      /* 0.9.98-dev.14: the songs or the LSDj slot streamed after READ_STREAM (readStream) */
+      if (m.length > 16 && m[4] === OP.STREAM_DATA && m[0] === 0xF0 && m[1] === 0x7D && m[2] === 0x47 && m[3] === 0x53) {
+        this.onStream?.(m); return;
       }
       /* 0.9.98-dev.4: OP4 / OP5 pressed on the FM-1 while the DJ layout has it on a deck (sent never asked) */
       if (m.length === 9 && m[4] === OP.DJ_KEY && m[0] === 0xF0 && m[1] === 0x7D && m[2] === 0x47 && m[3] === 0x53) {
@@ -175,8 +180,10 @@ export class Link {
     return {size, headerCrc: rd32(r.data, 4), dataCrc: rd32(r.data, 8)};
   }
   async exportCartridge(progress = () => {}, signal) {
-    const before = await this.cartridgeInfo(signal), out = new Uint8Array(before.size);
-    for (let off = 0; off < out.length; off += CART_CHUNK) {
+    const before = await this.cartridgeInfo(signal);
+    const streamed = (await this.info().catch(() => null))?.stream ? await this.readStream(1, before.size, progress, signal) : null;
+    const out = streamed || new Uint8Array(before.size);
+    for (let off = 0; !streamed && off < out.length; off += CART_CHUNK) {
       const count = Math.min(CART_CHUNK, out.length - off);
       const {data} = await this.req(OP.CART_READ, le32(off), {retries: 4, signal,
         accept: r => r.data.length < 4 || rd32(r.data, 0) === off});
@@ -191,9 +198,60 @@ export class Link {
       throw new LinkError('Installed cartridge changed or failed its transfer checksum. Nothing was prepared.');
     return out;
   }
+  /* READ_STREAM (0.9.98-dev.14, INFO stream): what (0 the songs, 1 the LSDj slot) whole, total bytes, sent by the FM-1
+     by itself as STREAM_DATA messages (firmware/lsdj_stream.h): 112 bytes each, 8 sent for 7, from its USB interrupt.
+     A grab read 128 bytes a request before (~1m45s for songs and LSDj). Missing parts are asked for again (a few
+     rounds); null if some still are (the caller reads the old way). */
+  async readStream(what, total, progress = () => {}, signal) {
+    const N = 112, out = new Uint8Array(total), have = new Uint8Array(Math.ceil(total / N));
+    let got = 0, last = Date.now();
+    this.onStream = m => {
+      if (m[5] !== 0 || m[6] !== what) return;
+      let off = 0;
+      for (let b = 0; b < 4; b++) off += (m[7 + 2 * b] | m[8 + 2 * b] << 7) * 2 ** (8 * b);
+      if (off % N || off >= total) return;
+      let k = 15, at = off;
+      while (k < m.length - 1 && at < total) {
+        const h = m[k++];
+        for (let i = 0; i < 7 && k < m.length - 1 && at < total; i++) out[at++] = m[k++] | ((h >> i) & 1) << 7;
+      }
+      const c = off / N;
+      if (!have[c] && at === Math.min(total, off + N)) { have[c] = 1; got += at - off; progress(got, total); }
+      last = Date.now();
+    };
+    const missing = () => {
+      const r = [];
+      for (let c = 0; c < have.length; c++) if (!have[c]) {
+        const a = c * N, b = Math.min(total, a + N);
+        if (r.length && r[r.length - 1][1] === a) r[r.length - 1][1] = b; else r.push([a, b]);
+      }
+      return r;
+    };
+    try {
+      for (let round = 0; round < 4 && got < total; round++) {
+        for (const [a, b] of missing().slice(0, 16)) {
+          if (signal?.aborted) throw new LinkError('Stopped.');
+          last = Date.now();
+          await this.req(OP.READ_STREAM, [what, ...le32(a), ...le32(b - a)], {retries: 2, signal});
+          const done = () => { for (let c = a / N; c * N < b; c++) if (!have[c]) return false; return true; };
+          while (!done() && Date.now() - last < 1000) await new Promise(r => setTimeout(r, 20));
+        }
+      }
+    } finally {
+      this.onStream = null;
+      if (got < total) await this.req(OP.READ_STREAM, [what, 0, 0, 0, 0, 0, 0, 0, 0], {retries: 1}).catch(() => {});   /* (stopped) */
+    }
+    return got === total ? out : null;
+  }
   /* CHUNK bytes of the save as the FM-1 holds it now, from off (a multiple of CHUNK): a copy, LSDj keeps playing */
   async saveRead(off) { return (await this.req(OP.READ, le32(off), {retries: 2})).data.slice(0, CHUNK); }
   async exportSave(progress = () => {}) {
+    /* 0.9.98-dev.14: streamed, and kept only if it is what the FM-1 holds (INFO's checksum: LSDj may change its
+       working song meanwhile; then read as before) */
+    if ((await this.info().catch(() => null))?.stream) {
+      const s = await this.readStream(0, SAVE_SIZE, progress);
+      if (s && crc32(s) === (await this.info()).saveCrc) return s;
+    }
     const out = new Uint8Array(SAVE_SIZE);
     for (let off = 0; off < SAVE_SIZE; off += CHUNK) {
       const {data} = await this.req(OP.READ, le32(off), {retries: 4});
@@ -362,6 +420,7 @@ export function infoFrom(d) {
   return {protocol: d[0], firmware: str(1, 9), title: str(9, 25), saveSize: rd32(d, 25), saveCrc: rd32(d, 29), importing: d[33], liveKnown: !!(d[34] & 1), tags: !!(d[34] & 2),
     presets: !!(d[34] & 8),   /* 0.9.98-dev.6: PRESET_* */
     fx98: !!(d[34] & 16),     /* 0.9.98-dev.10: the new filters, distortions and gates (fx-model.js choicesFor) */
+    stream: !!(d[34] & 32),   /* 0.9.98-dev.14: READ_STREAM (Link readStream) */
     build: d.length >= 39 ? rd32(d, 35) : null};   /* 0.9.98-dev.9: the build ID (template.json build_id); null before */
 }
 
