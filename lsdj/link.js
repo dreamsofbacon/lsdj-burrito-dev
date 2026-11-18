@@ -339,13 +339,15 @@ export class Link {
 }
 
 /* LIVE's 0.9.98 bytes after the battery (none before): {rows, songRows (per channel), sync ('off' | 'lsdj' |
-   'midi' | 'keybd'), live (SEQ live mode), level (page volume)}; unknown: null */
+   'midi' | 'keybd'), live (SEQ live mode), level (page volume), chainPos, chainLen (0.9.98-dev.12, per channel: the
+   phrase of its chain it plays, 0..15, and the chain's phrases, 1..16; null before)}; unknown: null */
 const SYNCS = {0: 'off', 1: 'lsdj', 3: 'midi', 5: 'keybd'};
 export function liveDj(e) {
-  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null};
+  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null};
   const k = b => b === 0xFF ? null : b;
   return {rows: [...e.slice(0, 4)].map(k), songRows: [...e.slice(4, 8)].map(k), sync: SYNCS[e[8]] ?? null,
-          live: e[9] === 0xFF ? null : !!e[9], level: k(e[10])};
+          live: e[9] === 0xFF ? null : !!e[9], level: k(e[10]),
+          chainPos: e.length >= 19 ? [...e.slice(11, 15)].map(k) : null, chainLen: e.length >= 19 ? [...e.slice(15, 19)].map(k) : null};
 }
 
 /* LIVE's battery byte: 0..3 bars of 3, +0x80 on USB power; 0xFF (or none: before FM-1_979) unknown */

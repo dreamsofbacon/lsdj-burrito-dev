@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // lsdj/dj.js: the DJ layout's maths (node tests/dj.mjs).
 import assert from 'node:assert/strict';
-import {BEAT, BAR, position, offset, syncBend, nextOn, START_ON, startUnit, startTime, countIn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
+import {BEAT, BAR, position, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainLeft, countIn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
 import {PPQN} from '../lsdj/midiclock.js';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -44,6 +44,13 @@ assert.equal(offset(null, 3), null);
 { const clock = 60000 / (120 * PPQN);
   assert.equal(startUnit('now'), 0); assert.equal(startUnit('beat'), BEAT); assert.equal(startUnit('8'), 8 * BAR);
   assert.equal(startUnit('nonsense'), BAR, 'unknown: the next bar');
+  /* Next chain (0.9.98-dev.12): a bar, plus the phrases left in the playing deck's chain (chainLeft) */
+  assert.equal(startUnit('chain'), BAR);
+  assert.equal(chainLeft(0, 4, 8, 0, 120), 3, 'phrase 1 of 4, half way: 3 more');
+  assert.equal(chainLeft(3, 4, 4, 0, 120), 0, 'the last phrase: the chain starts on the next bar');
+  assert.equal(chainLeft(3, 4, 15, 500, 120), 3, 'read on its last row 0.5 s ago: the next chain has begun (as long)');
+  assert.equal(chainLeft(0, 1, 3, 0, 120), 0, 'a one-phrase chain: every bar');
+  assert.equal(chainLeft(null, 4, 3, 0, 120), null); assert.equal(chainLeft(1, null, 3, 0, 120), null);
   assert.ok(START_ON.every(([k, t, u]) => typeof k === 'string' && t && u === startUnit(k)));
   assert.ok(near(startTime(BAR * 5.5, 120, 1000, 8 * BAR), 1000 + BAR * 2.5 * clock), 'bar 5.5 of 8: its bar 8');
   assert.ok(near(startTime(BAR * 4, 120, 1000, 4 * BAR), 1000), 'on its 4 bars: now');

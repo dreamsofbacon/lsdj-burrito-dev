@@ -19,7 +19,7 @@
 //   on that FM-1's link, or (0.9.98) the song row map: click a row to cue it.
 import {startClock, clampBpm, PPQN, CLOCK, START, CONTINUE, STOP, LOOKAHEAD_MS, workerTimer} from './midiclock.js';
 import {sameFm1, OP} from './link.js';
-import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
+import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainLeft, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
 import {PRESETS, preset, readMidi, actionFor, out, learnRule, saveLearned, loadLearned} from './mixers.js';
 import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, pitchFree, rangeFor, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
 import {unpackFx, packFx, unpackReverb, packReverb, packReverbSends, CHANNELS, firmwareNumber, unpackSettings, PRESETS as THEME_COLOURS, CUSTOM_THEME, THEMES, unpackMidi, packMidi, paramSet, PARAM} from './fx-model.js';
@@ -324,13 +324,13 @@ function deckPlay(d) {
 function startRef(d, t = now()) {
   if (master.startFrom === 'deck') {
     const o = decks.find(o => o !== d && o.key && (o.clock?.running ? t >= (o.startAt || 0) : o.ownRow != null && o.live?.bpm));
-    if (o?.clock?.running) return {phase: o.clock.phase(t), bpm: o.bpm * (o.clock.factor || 1), what: `deck ${NAMES[o.i]}`};
-    if (o) return {phase: deckPos(o, t), bpm: o.live.bpm, what: `deck ${NAMES[o.i]}`, barOnly: true};
+    if (o?.clock?.running) return {phase: o.clock.phase(t), bpm: o.bpm * (o.clock.factor || 1), what: `deck ${NAMES[o.i]}`, deck: o};
+    if (o) return {phase: deckPos(o, t), bpm: o.live.bpm, what: `deck ${NAMES[o.i]}`, barOnly: true, deck: o};
   }
   const m = masterNow(t);
   return m.phase == null ? null : {phase: m.phase, bpm: m.bpm, what: 'the master'};
 }
-const startWhat = () => master.startOn === 'now' ? 'now' : (START_ON.find(s => s[0] === master.startOn)?.[1] || 'next bar').toLowerCase().replace(/^every /, 'next ').replace(' (lsdj phrase)', '');
+const startWhat = () => master.startOn === 'now' ? 'now' : (START_ON.find(s => s[0] === master.startOn)?.[1] || 'next bar').toLowerCase().replace(/^every /, 'next ').replace(' (lsdj phrase)', '').replace(' (lsdj)', '');
 /* the deck's start, worked out again until it is close (a tempo change meanwhile moves the bar): the clock (its Start
    and first clocks, timed) only from ARM_MS before it, so a cancel before then sends nothing */
 const ARM_MS = 300;
@@ -344,6 +344,11 @@ function armStart(d) {
   else {
     const unit = startUnit(master.startOn);
     at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
+    if (master.startOn === 'chain' && r) {   /* the next bar, then the phrases left in the playing deck's chain */
+      const left = chainOf(r.deck, t, r.bpm);
+      if (left != null) at += left * 4 * 60000 / r.bpm;
+      else if (!d.chainSaid) { d.chainSaid = true; say(`Deck ${NAMES[d.i]}: ${r.deck ? `deck ${NAMES[r.deck.i]}'s FM-1 doesn't say where it is in its chain (needs 0.9.98-dev.12)` : 'the master has no chains'}: it starts on the next bar.`); }
+    }
   }
   d.startAt = at;
   if (at - t > ARM_MS) d.startTimer = later(at - t - ARM_MS, () => armStart(d));
@@ -352,7 +357,16 @@ function armStart(d) {
   void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
 }
-function cancelStart(d) { cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
+/* Next chain: whole phrases left in deck o's chain after the one playing (dj.js chainLeft), from its last LIVE (the
+   first playing channel's place, its chain's phrases and its row), or null */
+function chainOf(o, t, bpm) {
+  const l = o?.live;
+  if (!l?.chainPos || !l.chainLen || !l.rows) return null;
+  const c = [0, 1, 2, 3].find(c => (l.playing >> c) & 1 && l.chainPos[c] != null && l.chainLen[c] && l.rows[c] != null);
+  if (c == null) return null;
+  return chainLeft(l.chainPos[c], l.chainLen[c], l.rows[c] & 15, t - ((l.askedAt ?? t) + (l.gotAt ?? t)) / 2, bpm);
+}
+function cancelStart(d) { d.chainSaid = false; cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
 /* 0.9.98-dev.4: the deck on its FM-1's own keys, OP4 Play and OP5 Stop, lit as the deck (firmware/lsdj_djkeys.h).
    Each poll tells the FM-1 the deck's state (DJ_DECK); it lets go of the keys 3 s after the last one, and at once
    when the layout hides, the deck takes another FM-1, or the page closes. A firmware without it: not asked again. */
@@ -857,7 +871,8 @@ async function pollDeck(d) {
   if (!l) return;
   try {
     const asked = now();
-    d.live = await l.live(); d.live.askedAt = asked;   /* (when it was asked: killSettle trusts only a fresh one) */
+    d.live = await l.live(); d.live.askedAt = asked; d.live.gotAt = now();   /* (when it was asked: killSettle trusts only a fresh one;
+                                                                              Next chain takes it as read half-way) */
     songTempo(d);
     fm1Stopped(d); ownAnchor(d); adoptLiveFx(d); killSettle(d);
     await lsdjSync(d, l);

@@ -41,14 +41,27 @@ export function nextOn(masterPhase, bpm, now, unit = BAR) {
   return now + (left < 1e-9 || unit - left < 1e-9 ? 0 : left) * clock;
 }
 /* Play's "Start on" (the DJ layout): [key, label, unit in clocks]. A bar is one LSDj phrase (16 rows, 6 clocks each),
-   so "Next bar" counted on a playing deck is that LSDj's next row 00; 2 .. 16 bars count from where it started. */
+   so "Next bar" counted on a playing deck is that LSDj's next row 00; 2 .. 16 bars count from where it started.
+   "Next chain": the playing deck's LSDj's next chain (its first phrase), from where it is in its chain (chainLeft; a bar
+   when that isn't known). */
 export const START_ON = [['now', 'Now', 0], ['beat', 'Next beat', BEAT], ['bar', 'Next bar (LSDj phrase)', BAR],
+  ['chain', 'Next chain (LSDj)', BAR],
   ['2', 'Every 2 bars', 2 * BAR], ['4', 'Every 4 bars', 4 * BAR], ['8', 'Every 8 bars', 8 * BAR], ['16', 'Every 16 bars', 16 * BAR]];
 export const startUnit = key => (START_ON.find(s => s[0] === key) ?? START_ON[2])[2];
 /* when a deck starts: the next multiple of unit clocks on the reference (its phase in clocks now, at bpm); now for
    "Now" or no reference */
 export function startTime(phase, bpm, now, unit) {
   return !unit || phase == null ? now : nextOn(phase, bpm, now, unit);
+}
+/* "Next chain": how many whole phrases the reference deck's LSDj still plays in its chain after the one it plays now.
+   From its LIVE (0.9.98-dev.12): place p (0..15) of len phrases at phrase row `row`, read `ago` ms ago at bpm: the
+   phrases it has started since (the row read is half done), then what is left of the chain; past its end the next
+   chain is taken to be as long. null: not known (older firmware, not playing). A phrase is 16 rows (LSDj's H
+   command, a shorter phrase, is not seen). */
+export function chainLeft(p, len, row, ago, bpm) {
+  if (p == null || !len || row == null) return null;
+  const rows = row + 0.5 + Math.max(0, ago) * clampBpm(bpm) * 4 / 60000;
+  return len - 1 - mod(p + Math.floor(rows / 16), len);
 }
 /* what's left before a start at `at` (ms), at bpm: whole beats left, rounded up (1 on the last beat), and the bars */
 export function countIn(at, bpm, now) {
