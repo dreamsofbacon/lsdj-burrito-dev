@@ -7,7 +7,7 @@
 <title>Dreamy_bacon's LSDJ Burrito</title>
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
 <link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
-<link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
+<link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
 <link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
@@ -158,6 +158,8 @@ input[type=range]{accent-color:var(--accent)}
 .screen-tile.on{border-color:var(--accent);color:var(--ink);font-weight:600}
 .panel-head #screens-all{margin-left:auto;padding:2px 8px;font-size:12px}
 button.follow[aria-pressed=true]{background:var(--accent);color:var(--accent-ink,#000);border-color:var(--accent)}
+.hear:not([hidden]){display:inline-flex;align-items:center;gap:4px}
+#hear-vol{width:90px}
 #stage-pick,#dev-pick{max-width:min(100%,360px)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:1}
 .seg button{flex:1;border:0;border-radius:0;padding:5px 6px;font-size:13px;background:var(--card)}
@@ -924,7 +926,7 @@ body:not(.connected) .pop-body{opacity:.5;pointer-events:none}
   body.perform #live-badges{white-space:nowrap;overflow-x:auto;scrollbar-width:none;min-width:0}
   body.perform #live-badges::-webkit-scrollbar{display:none}
   body.perform #live-badges .badge:first-child{margin-left:0}
-  body.perform .stage-head .stage-gap,body.perform #stage-full{display:none}
+  body.perform .stage-head .stage-gap,body.perform #stage-full,body.perform #hear-box{display:none}   /* (Hear it here: a computer's) */
   body.perform .stage-head #fx-status{position:absolute;left:10px;right:10px;top:calc(100% + 4px);margin:0;padding:6px 10px;
     background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgb(0 0 0/.25)}
   body.perform .stage-head button,body.perform .stage-head .button-link{padding:6px 12px;font-size:14px;white-space:nowrap}
@@ -1261,6 +1263,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <h2>Perform <span id="stage-dev" class="hint"></span></h2>
 <select id="stage-pick" hidden aria-label="The FM-1 to use"></select>
 <button id="stage-follow" class="follow" type="button" aria-pressed="false" hidden title="Switch by itself to the FM-1 being played">Follow</button>
+<span id="hear-box" class="hear" hidden><button id="hear-btn" class="follow" type="button" aria-pressed="false">Hear it here</button><input id="hear-vol" type="range" min="0" max="100" value="100" hidden aria-label="Volume on this computer"><select id="hear-pick" hidden aria-label="The FM-1's sound input"></select></span>
 <span id="live-badges"></span>
 <div id="stage-mode" class="seg stage-mode" role="radiogroup" aria-label="Perform layout"><button type="button" role="radio" data-mode="fx">Effects</button><button type="button" role="radio" data-mode="grid" title="Every effect at once: a row a knob, a column a channel">Compact</button><button type="button" role="radio" data-mode="dj">DJ</button></div>
 <span class="stage-gap"></span>

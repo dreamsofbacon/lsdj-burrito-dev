@@ -418,7 +418,9 @@ export const FEATURES = [
   /* FM-1_989: how often the FM-1 draws its screen (and so the mirror here); more costs CPU time next to the sound */
   {key: 'screenRate', bits: [18, 2], name: 'FM-1 screen: pictures a second (more costs CPU time next to the sound)', choices: ['10', '15', '20', '30']},
   /* 0.9.98-dev.6: a preset loaded slides the effects to its values over this long (older firmware: always 0 bits) */
-  {key: 'presetGlide', bits: [20, 3], xor: 1, name: 'Preset glide: effects slide to a loaded preset over', choices: ['Off (at once)', '0.1 s', '0.25 s', '0.5 s', '1 s', '2 s', '4 s', '8 s'], def: 1}];
+  {key: 'presetGlide', bits: [20, 3], xor: 1, name: 'Preset glide: effects slide to a loaded preset over', choices: ['Off (at once)', '0.1 s', '0.25 s', '0.5 s', '1 s', '2 s', '4 s', '8 s'], def: 1},
+  /* 0.9.98-dev.15 (INFO usbVol): the USB sound at full level, or at the volume as the headphones */
+  {key: 'usbAudio', bits: [23, 1], name: 'USB audio level', choices: ['Full (for recording)', 'The volume (MASTER knob × this page), as the headphones']}];
 export const FEATURE_DEFAULTS = Object.fromEntries(FEATURES.map(f => [f.key, f.def || 0]));
 export function unpackFeatures(v) {
   if (v >>> 24 !== 0x46) throw Error('Not a feature switches word from this firmware.');

@@ -38,8 +38,10 @@ const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } cat
 const NAMES = ['A', 'B'];
 /* app.js: devices() -> [{key, label, fw}] (the FM-1s plugged in), linkFor(key) -> a Link or null, access() -> MIDIAccess
    or null, outputFor(key) -> the FM-1's MIDI output, takeClock() (Perform › Clock goes off: two clocks would fight),
-   screen(key, link, canvas, onSupport) -> a started screen mirror ({stop}) on that link, or null */
-let hooks = {devices: () => [], linkFor: () => null, access: () => null, outputFor: () => null, takeClock: () => {}, screen: () => null};
+   screen(key, link, canvas, onSupport) -> a started screen mirror ({stop}) on that link, or null,
+   hearing() -> the page plays the FM-1s' USB sound (app.js, usb-audio.js), hear([{key, gain 0..1}]) -> each deck's level there */
+let hooks = {devices: () => [], linkFor: () => null, access: () => null, outputFor: () => null, takeClock: () => {}, screen: () => null,
+  hearing: () => false, hear: () => {}};
 export function setDjHooks(h) { hooks = {...hooks, ...h}; }
 
 const now = () => performance.now();
@@ -676,11 +678,20 @@ async function sendLevel(d) {
 async function fullVolume(key) {
   try { await hooks.linkFor(key)?.volumeSet(127); } catch { /* gone: it is full at its next power on */ }
 }
-/* the crossfader sets the FM-1s' volumes only without a MIDI mixer; otherwise they are full */
+/* the crossfader sets the FM-1s' volumes only without a MIDI mixer, and not while this page plays their sound (it
+   mixes them itself then: hearLevels); otherwise they are full */
 function applyVolumes() {
-  const g = crossfade(mixer.xfader, mixer.curve);
-  decks.forEach((d, i) => deckLevel(d, mixer.id === 'none' ? g[i] : null));
+  const g = crossfade(mixer.xfader, mixer.curve), hear = hooks.hearing();
+  decks.forEach((d, i) => deckLevel(d, mixer.id === 'none' && !hear ? g[i] : null));
+  hearLevels();
 }
+/* the decks' sound on this computer: what reaches each deck (its mixer fader, when sent, times its crossfader share) */
+function hearLevels() {
+  const g = crossfade(mixer.xfader, mixer.curve);
+  hooks.hear(shown ? decks.flatMap((d, i) => d.kind === 'fm1' && d.key != null
+    ? [{key: d.key, gain: (mixer.id === 'none' ? 1 : mixer.faders[mixer.map[i]] ?? 1) * g[i]}] : []) : []);
+}
+export const djHearChanged = () => { if (shown) setXfader(mixer.xfader); };
 /* 0.9.98: LSDj's live mode (Loop chains: each channel repeats its chain until another is cued), or song mode */
 const HOLD_OFF = 'Loop', HOLD_ON = 'Loop';   /* (lit while on: the pads fit 6 letters) */
 async function deckHold(d) {
@@ -990,7 +1001,8 @@ function setXfader(v) {
   if (mixer.id !== 'none') decks.forEach((d, i) => { const ch = mixer.map[i]; if (ch) sent = mixerSend('fader', ch, g[i]) || sent; });
   applyVolumes();
   const fm1s = decks.filter(d => d.kind === 'fm1');
-  mixer.note = mixer.id === 'none'
+  mixer.note = hooks.hearing() ? 'The crossfader mixes the FM-1s\' sound on this computer (Hear it here); the FM-1s stay at full volume.'
+    : mixer.id === 'none'
     ? (fm1s.length && fm1s.every(d => fwOf(d) >= 998) ? 'Without a MIDI mixer the crossfader sets each FM-1\'s volume (times its MASTER knob).'
       : 'Without a MIDI mixer the crossfader sets each FM-1\'s volume: that needs 0.9.98 on the FM-1s.')
     : sent ? '' : 'This mixer doesn\'t take its volumes from the page: the crossfader shows here only.';
@@ -1446,6 +1458,7 @@ function mixerNumbers() {
   const v = String(Math.round(mixer.xfader * 1000));
   if (u.xf.value !== v) u.xf.value = v;   /* (dragged here: already that value) */
   u.note.textContent = mixer.note; u.note.hidden = !mixer.note;
+  hearLevels();
 }
 function learnBox() {
   const pick = sel(ACTIONS.map((a, i) => [String(i), actName(a)]), '0', () => {}, 'Action to learn');
@@ -1465,6 +1478,7 @@ function draw() {
     deckScreen(d);
   });
   drawMixer();
+  hearLevels();
 }
 /* the moving parts, 20 times a second: tempo readouts, beat lights, the gap to the master, what the FM-1 says */
 function tick() {
@@ -1724,6 +1738,7 @@ export function djShown(on) {
   decks.forEach(deckScreen);   /* the screens run only while the layout shows */
   if (!on) {   /* the Effects layout: the FM-1s at full volume, their OP4 / OP5 their own */
     decks.forEach(d => { deckLevel(d, null); if (d.kind === 'fm1') djLetGo(d.key); });
+    hearLevels();
     return;
   }
   applyVolumes();
