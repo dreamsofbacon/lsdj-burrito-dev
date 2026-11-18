@@ -1017,7 +1017,18 @@ function actName(a) {
 /* ---------- drawing ---------- */
 let statusEl = null;
 /* (a deck's trouble also goes in the connection log, to read after it has gone from the status line) */
-const say = text => { if (statusEl) statusEl.textContent = text; if (/^Deck [AB]: /.test(text) && !/Sync|synced|cued|speed/.test(text)) logEvent(text); };
+const say = text => { showStatus(text); if (/^Deck [AB]: /.test(text) && !/Sync|synced|cued|speed/.test(text)) logEvent(text); };
+/* the status line clears itself STATUS_MS after its last message (a longer message stays a little longer): it kept
+   "the song plays on again (song mode)" after the deck stopped and "Preset 2 is empty" long after (Colin's DJ test,
+   2026-11-17). The Log keeps the decks' news. */
+const STATUS_MS = 10000;
+let statusTimer = 0;
+function showStatus(text) {
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { if (statusEl?.textContent === text) statusEl.textContent = ''; }, STATUS_MS + Math.min(10000, text.length * 40));
+}
 function sel(options, value, onchange, label) {
   const s = el('select', {onchange: () => onchange(s.value)});
   if (label) s.setAttribute('aria-label', label);
@@ -1733,7 +1744,7 @@ export function djDevicesChanged() {
     d.gone = {key: d.key, playing: !!d.clock?.running, synced: !!d.synced, others: new Set(list.map(x => x.key)),
       info: was && {title: was.title, firmware: was.fw, saveCrc: was.crc}};
     logEvent(`Deck ${NAMES[d.i]}: its FM-1 (${d.key}) went away${d.gone.playing ? ' while playing' : ''}.`);
-    if (statusEl) statusEl.textContent = `Deck ${NAMES[d.i]}: its FM-1 went away. It comes back to this deck by itself when it's found again.`;
+    showStatus(`Deck ${NAMES[d.i]}: its FM-1 went away. It comes back to this deck by itself when it's found again.`);
     void assign(d, '');
   }
   for (const d of decks) {
@@ -1750,7 +1761,7 @@ export function djDevicesChanged() {
       if (m[g.key]) { m[back.key] = m[g.key]; delete m[g.key]; store.set(SAVS, JSON.stringify(m)); }
     }
     logEvent(`Deck ${NAMES[d.i]}: its FM-1 is back${back.key !== g.key ? ` on new ports (${g.key} -> ${back.key})` : ` (${g.key})`}${g.playing ? ', playing again from the next bar' : ''}.`);
-    if (statusEl) statusEl.textContent = `Deck ${NAMES[d.i]}: its FM-1 is back.`;
+    showStatus(`Deck ${NAMES[d.i]}: its FM-1 is back.`);
     void assign(d, `fm1:${back.key}`).then(() => {
       if (g.synced && !d.synced) deckSync(d);
       if (g.playing && !d.clock?.running) deckPlay(d);
