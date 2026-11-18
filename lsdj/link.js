@@ -421,6 +421,7 @@ export function infoFrom(d) {
     presets: !!(d[34] & 8),   /* 0.9.98-dev.6: PRESET_* */
     fx98: !!(d[34] & 16),     /* 0.9.98-dev.10: the new filters, distortions and gates (fx-model.js choicesFor) */
     stream: !!(d[34] & 32),   /* 0.9.98-dev.14: READ_STREAM (Link readStream) */
+    usbVol: !!(d[34] & 64),   /* 0.9.98-dev.15: USB audio and its level switch (FEAT usbAudio) */
     build: d.length >= 39 ? rd32(d, 35) : null};   /* 0.9.98-dev.9: the build ID (template.json build_id); null before */
 }
 

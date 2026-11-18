@@ -16,7 +16,8 @@ import {CHANNELS, pagesForFx, PARAM, paramGet, paramSet, valueText, channelSumma
 import {fxDiagram, pageFor} from './fx-diagram.js';
 import {zipStore} from './zip.js';
 import {startClock, startRelay, clampBpm} from './midiclock.js';
-import {mountDj, setDjHooks, djShown, djDevicesChanged, rememberSav, djLive} from './dj-ui.js';
+import {mountDj, setDjHooks, djShown, djDevicesChanged, rememberSav, djLive, djHearChanged} from './dj-ui.js';
+import {Hear} from './usb-audio.js';
 import {romFromSlot} from './lsdj-rom.js';
 import {ScreenMirror} from './screen.js';
 import {initPresets, presetsShown, readPresetList} from './presets-ui.js';
@@ -32,6 +33,9 @@ const say = (id, text, cls = 'hint') => {
 };
 let hasPresets = false;   // the FM-1 in use has presets (INFO, 0.9.98-dev.6)
 let fx98 = false;   // the FM-1 in use takes the 0.9.98 effect choices (INFO; fx-model.js choicesFor)
+let hasUsbVol = false;   // the FM-1 in use has the USB audio level switch (INFO, 0.9.98-dev.15)
+const hear = new Hear();   // Hear it here (below): the FM-1's USB sound on this computer
+let hearOn = false, hearVol = 1, djHear = [], hearReady = false;
 const enable = on => {
   ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'].forEach(id => $(id).setAttribute('aria-disabled', on ? 'false' : 'true'));
   presetsShown(on && hasPresets);
@@ -55,7 +59,7 @@ async function connectTo(input, output, how = 'USB', {fast = false} = {}) {
   connecting = true;
   try { await connectOnce(input, output, how, fast); }
   finally { connecting = false; }
-  drawDevPick(); syncWatchers();
+  drawDevPick(); syncWatchers(); syncHear();
   if (connected && !virtual) scanSoon();   /* (the other FM-1s plugged in, for the list) */
 }
 async function connectOnce(input, output, how, fast) {
@@ -74,7 +78,7 @@ async function connectOnce(input, output, how, fast) {
   try {
     const info = await link.info();
     if (info.protocol !== 1) throw new LinkError(`This page speaks link version 1; the FM-1 speaks ${info.protocol}. Update the page or the firmware.`);
-    fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets; fx98 = !!info.fx98;
+    fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets; fx98 = !!info.fx98; hasUsbVol = !!info.usbVol;
     muteOk = fwNum >= 977;   // MUTE_SET: FM-1_977 and newer
     say('device', (virtual ? `Connected to the virtual FM-1 (the emulator on this page, not a device): ` : `Connected over ${how}: `) +
       `${info.firmware} running ${info.title || 'a game'}` + (info.liveKnown ? '' : ' (live data needs LSDj 9.3.9)'), 'ok');
@@ -1319,6 +1323,8 @@ setDjHooks({
   outputFor: key => devices.find(x => portKey(x) === key)?.output || null,
   access: () => ports?.access || null,
   takeClock: () => { if (syncMode !== 'off') { setSync('off'); drawSync('The DJ layout clocks the FM-1s now: Clock here is off.'); } },
+  hearing: () => hearOn,
+  hear: list => { djHear = list; syncHear(); },
   /* a deck's FM-1 screen: a mirror of its own on the deck's link, as Perform › Screen (paused there meanwhile) */
   screen: (key, l, canvas, onSupport) => {
     const d = devices.find(x => portKey(x) === key);
@@ -1387,6 +1393,52 @@ setCrateHooks({
   info: key => crateLink(key).info(),
   volumeFull: async key => { try { await djLinkFor(key)?.volumeSet(127); } catch { /* older firmware, or gone: full at its next start */ } },
 }, {});
+/* ---------- Hear it here: the FM-1's USB sound on this computer (usb-audio.js; 0.9.98-dev.11 and newer) ----------
+   Effects: the FM-1 in use at this volume. DJ: each deck's FM-1 at its crossfader share (dj-ui.js hearLevels) times
+   this volume, the FM-1s themselves at full volume meanwhile. Kept in this browser. */
+try {
+  hearOn = localStorage.getItem('lsdj-burrito-hear') === '1';
+  const v = localStorage.getItem('lsdj-burrito-hear-vol'); if (v !== null) hearVol = Math.max(0, Math.min(1, +v || 0));
+} catch { /* off, full */ }
+function syncHear() {
+  if (!hearReady) return;   /* (the DJ layout mounts before this part of the page is set up) */
+  const want = new Map();
+  if (hearOn && stageMode === 'dj') for (const x of djHear) { const d = devOf(x.key); if (d) want.set(x.key, {port: d.output.name, gain: x.gain * hearVol}); }
+  else if (hearOn && connected && !virtual && current) want.set(curKey(), {port: current.output.name, gain: hearVol});
+  void hear.want(want);
+  drawHear();
+}
+function drawHear() {
+  $('hear-box').hidden = !hear.supported;
+  const b = $('hear-btn'), key = connected && !virtual && stageMode !== 'dj' ? curKey() : null;
+  b.setAttribute('aria-pressed', String(hearOn)); b.classList.toggle('on', hearOn);
+  $('hear-vol').hidden = !hearOn;
+  const pick = $('hear-pick'), many = hearOn && key != null && hear.inputs.length > 1;
+  pick.hidden = !many;
+  if (many) {
+    pick.replaceChildren(new Option('Its sound input…', ''), ...hear.inputs.map(i => new Option(i.label, i.deviceId)));
+    pick.value = hear.inputFor(key) ?? '';
+  }
+  b.title = hear.error || (hearOn && hear.wanted.size && !hear.players.size
+    ? 'No sound from the FM-1 yet: it needs 0.9.98-dev.11 or newer over USB (a sound input named Felucca). With several, choose its input.'
+    : 'Play the FM-1\'s USB sound on this computer: no mixer or DAW needed. In DJ, the crossfader mixes the decks.');
+}
+hear.onChange = drawHear;
+$('hear-btn').onclick = () => {
+  hearOn = !hearOn;
+  try { localStorage.setItem('lsdj-burrito-hear', hearOn ? '1' : '0'); } catch { /* this visit only */ }
+  djHearChanged(); syncHear();
+};
+$('hear-vol').value = String(Math.round(hearVol * 100));
+$('hear-vol').oninput = e => {
+  hearVol = +e.target.value / 100;
+  try { localStorage.setItem('lsdj-burrito-hear-vol', String(hearVol)); } catch { /* this visit only */ }
+  syncHear();
+};
+$('hear-pick').onchange = e => { const key = curKey(); if (key != null) hear.choose(key, e.target.value); };
+document.addEventListener('device-state', () => syncHear());
+hearReady = true;
+
 /* Effects | Compact | DJ. Compact is the Effects layout (stageMode 'fx') with every effect in one grid (body.fxgrid) */
 let stageMode = 'fx', fxGrid = false, djHeld = false;   /* djHeld: the DJ crate has the header's FM-1, the layout kept up */
 try { const s = localStorage.getItem('lsdj-burrito-stage'); if (s === 'dj') stageMode = 'dj'; else if (s === 'grid') fxGrid = true; } catch { /* Effects */ }
@@ -1401,6 +1453,7 @@ function setStageMode(m) {
   buildGrid(); refresh();
   $$('#stage-mode [data-mode]').forEach(b => { const on = b.dataset.mode === shown; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
   djShown(stageMode === 'dj');
+  syncHear();
   queueFit();
 }
 $$('#stage-mode [data-mode]').forEach(b => { b.onclick = () => setStageMode(b.dataset.mode); });
@@ -1572,7 +1625,7 @@ function buildSettings() {
   const fbox = $('feat-form'); fbox.replaceChildren();
   $('feat-sec').hidden = !features;
   if (features) selects(fbox, FEATURES.filter(f => f.key !== 'fxTheme' && f.key !== 'autosave' && f.key !== 'screenRate' &&
-    (f.key !== 'presetGlide' || hasPresets)), features);
+    (f.key !== 'presetGlide' || hasPresets) && (f.key !== 'usbAudio' || hasUsbVol)), features);
 }
 /* The CC map: per channel, then the shared ones */
 {
