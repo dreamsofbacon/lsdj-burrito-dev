@@ -34,7 +34,9 @@ const say = (id, text, cls = 'hint') => {
 let hasPresets = false;   // the FM-1 in use has presets (INFO, 0.9.98-dev.6)
 let fx98 = false;   // the FM-1 in use takes the 0.9.98 effect choices (INFO; fx-model.js choicesFor)
 let hasUsbVol = false;   // the FM-1 in use has the USB audio level switch (INFO, 0.9.98-dev.15)
-const hear = new Hear();   // Hear it here (below): the FM-1's USB sound on this computer
+const hear = new Hear(globalThis, {   // Hear it here (below): the FM-1's USB sound on this computer; its input kept per MIDI port
+  get: port => { try { return localStorage.getItem('lsdj-burrito-hear-in:' + port); } catch { return null; } },
+  set: (port, id) => { try { if (id) localStorage.setItem('lsdj-burrito-hear-in:' + port, id); else localStorage.removeItem('lsdj-burrito-hear-in:' + port); } catch { /* this visit only */ } }});
 let hearOn = false, hearVol = 1, djHear = [], hearReady = false;
 const enable = on => {
   ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'].forEach(id => $(id).setAttribute('aria-disabled', on ? 'false' : 'true'));
@@ -1413,19 +1415,23 @@ function drawHear() {
   const b = $('hear-btn'), key = connected && !virtual && stageMode !== 'dj' ? curKey() : null;
   b.setAttribute('aria-pressed', String(hearOn)); b.classList.toggle('on', hearOn);
   $('hear-vol').hidden = !hearOn;
-  const pick = $('hear-pick'), many = hearOn && key != null && hear.inputs.length > 1;
-  pick.hidden = !many;
-  if (many) {
-    pick.replaceChildren(new Option('Its sound input…', ''), ...hear.inputs.map(i => new Option(i.label, i.deviceId)));
+  /* the FM-1 in use's input, from every input there is (its name can be anything); DJ: chosen here per FM-1 */
+  const pick = $('hear-pick'), show = hearOn && key != null && hear.inputs.length > 0;
+  pick.hidden = !show;
+  if (show) {
+    pick.replaceChildren(new Option('Its sound input…', ''), ...hear.inputs.map(i => new Option(i.label || 'A sound input', i.deviceId)));
     pick.value = hear.inputFor(key) ?? '';
   }
-  b.title = hear.error || (hearOn && hear.wanted.size && !hear.players.size
-    ? 'No sound from the FM-1 yet: it needs 0.9.98-dev.11 or newer over USB (a sound input named Felucca). With several, choose its input.'
-    : 'Play the FM-1\'s USB sound on this computer: no mixer or DAW needed. In DJ, the crossfader mixes the decks.');
+  const st = $('hear-status');
+  st.textContent = !hearOn ? '' : key != null ? hear.status(key)
+    : stageMode === 'dj' ? (hear.error || `Playing ${hear.players.size} of ${hear.wanted.size} decks' FM-1s${hear.players.size < hear.wanted.size ? ' (choose an FM-1\'s input in Effects)' : ''}.`) : '';
+  st.hidden = !st.textContent;
+  b.title = 'Play the FM-1\'s USB sound on this computer: no mixer or DAW needed. In DJ, the crossfader mixes the decks.';
 }
 hear.onChange = drawHear;
 $('hear-btn').onclick = () => {
   hearOn = !hearOn;
+  if (hearOn) hear.unlock();   /* (the browser starts a page's sound only in a click) */
   try { localStorage.setItem('lsdj-burrito-hear', hearOn ? '1' : '0'); } catch { /* this visit only */ }
   djHearChanged(); syncHear();
 };
@@ -1435,8 +1441,10 @@ $('hear-vol').oninput = e => {
   try { localStorage.setItem('lsdj-burrito-hear-vol', String(hearVol)); } catch { /* this visit only */ }
   syncHear();
 };
-$('hear-pick').onchange = e => { const key = curKey(); if (key != null) hear.choose(key, e.target.value); };
+$('hear-pick').onchange = e => { if (connected && current) { hear.unlock(); void hear.choose(current.output.name, e.target.value); } };
 document.addEventListener('device-state', () => syncHear());
+/* turned on in an earlier visit: the sound may start only after a click here */
+document.addEventListener('pointerdown', () => { if (hearOn && hear.ctx?.state !== 'running') { hear.unlock(); setTimeout(drawHear, 100); } }, true);
 hearReady = true;
 
 /* Effects | Compact | DJ. Compact is the Effects layout (stageMode 'fx') with every effect in one grid (body.fxgrid) */

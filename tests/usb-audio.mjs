@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Hear it here (lsdj/usb-audio.js): each FM-1's USB sound input found by its MIDI port's name, played through a gain
-// of its own; gains follow at once, inputs start and stop as wanted; the USB AUDIO switch and its INFO flag
-// (node tests/usb-audio.mjs).
+// Hear it here (lsdj/usb-audio.js): every sound input listed (the FM-1's may be renamed), the one chosen for an FM-1
+// kept by its MIDI port name, a first guess from the name; played through a gain of its own; gains follow at once,
+// inputs start and stop as wanted; the USB AUDIO switch and its INFO flag (node tests/usb-audio.mjs).
 import assert from 'node:assert/strict';
-import {Hear, pickInput, isFm1Input} from '../lsdj/usb-audio.js';
+import {Hear, pickInput, isInput} from '../lsdj/usb-audio.js';
 import {infoFrom} from '../lsdj/link.js';
 import {FEATURES, unpackFeatures, packFeatures} from '../lsdj/fx-model.js';
 
 const inp = (deviceId, label) => ({kind: 'audioinput', deviceId, label});
 const one = inp('a', 'Microphone (Felucca)'), two = inp('b', 'Microphone (2- Felucca)'), mic = inp('m', 'Microphone (Realtek)');
-assert.ok(isFm1Input(one) && !isFm1Input(mic) && !isFm1Input({kind: 'audiooutput', label: 'Felucca'}));
-assert.equal(pickInput([one], 'Felucca'), 'a');
-assert.equal(pickInput([one], 'something else'), 'a', 'the only one');
+const renamed = inp('r', 'Deck A (Felucca)');
+assert.ok(isInput(one) && isInput(mic) && !isInput({kind: 'audiooutput', deviceId: 'x', label: 'Felucca'}));
+assert.ok(!isInput(inp('default', 'Default - Microphone (Felucca)')) && !isInput(inp('communications', 'x')), 'aliases left out');
+assert.equal(pickInput([one, mic], 'Felucca'), 'a');
+assert.equal(pickInput([one, mic], 'something else'), 'a', 'the only Felucca');
 assert.equal(pickInput([one, two], '2- Felucca'), 'b');
 assert.equal(pickInput([one, two], 'Felucca'), 'a');
 assert.equal(pickInput([one, two], '3- Felucca'), null, 'unsure: the user chooses');
 assert.equal(pickInput([one, two], '3- Felucca', 'b'), 'b', 'chosen before');
 assert.equal(pickInput([one, two], 'Felucca', 'gone'), 'a');
+assert.equal(pickInput([mic], 'Felucca'), null, 'never a guess at a microphone');
+assert.equal(pickInput([mic, inp('x', 'Line (My FM-1)')], 'Felucca', 'x'), 'x', 'any name, once chosen');
+assert.equal(pickInput([renamed, mic], 'Felucca'), 'r');
 assert.equal(pickInput([], 'Felucca'), null);
 
 /* a pretend browser: two FM-1 inputs and a microphone; names only after the permission */
@@ -44,11 +49,14 @@ function browser() {
   return {env: {navigator: {mediaDevices: md}, AudioContext}, log, streams};
 }
 
-const b = browser(), h = new Hear(b.env);
+const kept = new Map(), store = {get: p => kept.get(p) ?? null, set: (p, id) => { if (id) kept.set(p, id); else kept.delete(p); }};
+const b = browser(), h = new Hear(b.env, store);
 assert.ok(h.supported);
 assert.ok(!new Hear({navigator: {}}).supported);
+h.unlock();
+assert.equal(h.ctx.state, 'running', 'the page\'s sound made in the click');
 await h.want(new Map([['k1', {port: 'Felucca', gain: 0.5}]]));
-assert.deepEqual(h.inputs.map(i => i.deviceId), ['a', 'b'], 'FM-1 inputs only, named after the permission');
+assert.deepEqual(h.inputs.map(i => i.deviceId), ['a', 'b', 'm'], 'every input, named after the permission');
 const p1 = h.players.get('k1');
 assert.equal(p1.deviceId, 'a');
 assert.equal(p1.gain.gain.value, 0.5);
@@ -56,6 +64,7 @@ const c = p1.stream.constraints;
 assert.ok(!c.echoCancellation && !c.noiseSuppression && !c.autoGainControl, 'raw sound, no voice processing');
 assert.deepEqual(c.deviceId, {exact: 'a'});
 assert.equal(h.ctx.opts.latencyHint, 'interactive');
+assert.equal(h.status('k1'), 'Playing Microphone (Felucca)');
 
 /* gains follow at once; a second FM-1 joins; the first leaves */
 h.want(new Map([['k1', {port: 'Felucca', gain: 0.2}]]));
@@ -68,20 +77,25 @@ await h.want(new Map([['k2', {port: '2- Felucca', gain: 2}]]));
 assert.ok(!h.players.has('k1') && p1.stream.stopped, 'stopped and let go');
 assert.equal(h.players.get('k2').gain.gain.value, 1, 'clamped');
 
-/* chosen by hand: the other input */
-h.choose('k2', 'a'); await h.busy;
-assert.equal(h.inputFor('k2'), 'a');
+/* chosen by hand (any input, by the FM-1's port name, kept) */
+await h.choose('2- Felucca', 'm');
+assert.equal(h.inputFor('k2'), 'm');
+assert.equal(kept.get('2- felucca'), 'm');
 /* nothing wanted: all stop, the context sleeps */
 await h.want(new Map());
 assert.equal(h.players.size, 0);
 assert.ok(b.streams.filter(s => s.constraints.deviceId).every(s => s.stopped));
 assert.ok(b.log.includes('suspend'));
 
-/* an unknown port among two inputs: nothing plays until chosen */
+/* an unknown port among two Felucca inputs: nothing plays until chosen, and says so */
 await h.want(new Map([['k3', {port: '7- Felucca', gain: 1}]]));
 assert.equal(h.players.size, 0);
-h.choose('k3', 'b'); await h.busy;
+assert.match(h.status('k3'), /Choose/);
+await h.choose('7- Felucca', 'b');
 assert.equal(h.inputFor('k3'), 'b');
+/* a browser holding the sound until a click: said */
+h.ctx.state = 'suspended';
+assert.match(h.status('k3'), /click/);
 
 /* refused permission: said, nothing plays */
 const r = browser(); r.env.navigator.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('no'), {name: 'NotAllowedError'}); };
@@ -99,4 +113,4 @@ assert.equal(unpackFeatures((0x460001CE | 1 << 23) >>> 0).usbAudio, 1);
 const info = flags => infoFrom(new Uint8Array([1, ...new Array(33).fill(0), flags, 0, 0, 0, 0]));
 assert.ok(info(64).usbVol && !info(32).usbVol);
 
-console.log('PASS usb audio: inputs found by port name, raw, gains at once, start / stop / choose, permission refused; USB AUDIO switch and INFO flag');
+console.log('PASS usb audio: every input listed, chosen per FM-1 and kept, a guess only from the name, raw, gains at once, start / stop, status, click unlock, permission refused; USB AUDIO switch and INFO flag');

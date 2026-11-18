@@ -160,6 +160,7 @@ input[type=range]{accent-color:var(--accent)}
 button.follow[aria-pressed=true]{background:var(--accent);color:var(--accent-ink,#000);border-color:var(--accent)}
 .hear:not([hidden]){display:inline-flex;align-items:center;gap:4px}
 #hear-vol{width:90px}
+#hear-pick{max-width:220px}
 #stage-pick,#dev-pick{max-width:min(100%,360px)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:1}
 .seg button{flex:1;border:0;border-radius:0;padding:5px 6px;font-size:13px;background:var(--card)}
@@ -1263,7 +1264,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <h2>Perform <span id="stage-dev" class="hint"></span></h2>
 <select id="stage-pick" hidden aria-label="The FM-1 to use"></select>
 <button id="stage-follow" class="follow" type="button" aria-pressed="false" hidden title="Switch by itself to the FM-1 being played">Follow</button>
-<span id="hear-box" class="hear" hidden><button id="hear-btn" class="follow" type="button" aria-pressed="false">Hear it here</button><input id="hear-vol" type="range" min="0" max="100" value="100" hidden aria-label="Volume on this computer"><select id="hear-pick" hidden aria-label="The FM-1's sound input"></select></span>
+<span id="hear-box" class="hear" hidden><button id="hear-btn" class="follow" type="button" aria-pressed="false">Hear it here</button><input id="hear-vol" type="range" min="0" max="100" value="100" hidden aria-label="Volume on this computer"><select id="hear-pick" hidden aria-label="The FM-1's sound input"></select><span id="hear-status" class="hint" role="status" hidden></span></span>
 <span id="live-badges"></span>
 <div id="stage-mode" class="seg stage-mode" role="radiogroup" aria-label="Perform layout"><button type="button" role="radio" data-mode="fx">Effects</button><button type="button" role="radio" data-mode="grid" title="Every effect at once: a row a knob, a column a channel">Compact</button><button type="button" role="radio" data-mode="dj">DJ</button></div>
 <span class="stage-gap"></span>
