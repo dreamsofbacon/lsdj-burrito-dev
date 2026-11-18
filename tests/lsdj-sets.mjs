@@ -58,6 +58,11 @@ function song(instruments, notes, ins0 = instruments[0]?.ins ?? 0) {
 
 /* ---- versions ---- */
 assert.deepEqual(S.lsdjVersion(lsdj('9.3.9', [])), [9, 3, 9]);
+/* a label: the version, else "before 4.3" for the old "LSDJ" title, else the title */
+assert.equal(S.lsdjLabel(lsdj('9.3.9', [])), '9.3.9');
+{ const r = lsdj('9.3.9', []); r.fill(0, 0x134, 0x144); r.set([..."LSDJ"].map(c => c.charCodeAt(0)), 0x134); assert.equal(S.lsdjLabel(r), 'before 4.3');
+  r.fill(0, 0x134, 0x144); r.set([..."MYGAME"].map(c => c.charCodeAt(0)), 0x134); assert.equal(S.lsdjLabel(r), '"MYGAME"');
+  r.fill(0, 0x134, 0x144); assert.equal(S.lsdjLabel(r), 'unknown version'); }
 assert.equal(S.wantsRotated(lsdj('9.3.9', [])), true);
 assert.equal(S.wantsRotated(lsdj('5.7.8', [])), false);
 assert.ok(S.compareVersions([5, 7, 8], [9, 3, 9]) < 0);

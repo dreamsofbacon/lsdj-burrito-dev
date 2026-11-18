@@ -32,6 +32,14 @@ export function lsdjVersion(rom) {
   return m ? [+m[1], +m[2], +m[3]] : null;
 }
 export const versionText = v => v ? v.join('.') : 'unknown version';
+/* a ROM's LSDj for a label: its version, else what its title says. LSDj before 4.3 write only "LSDJ" in the header
+   (no version: lsdj-rom.js identifyRom says the same); a crate card said "LSDj unknown version" (Colin's DJ test) */
+export function lsdjLabel(rom) {
+  const v = lsdjVersion(rom);
+  if (v) return versionText(v);
+  const t = String.fromCharCode(...rom.subarray(0x134, 0x144)).replace(/[^\x20-\x7e]/g, ' ').trim();
+  return /^LSDJ\b/i.test(t) ? 'before 4.3' : t ? `"${t}"` : 'unknown version';
+}
 /* Song formats. A song's last byte (0x7FFF) is its format: the LSDj that last saved it writes its own number there
    (libLSDJ FORMAT_VERSION_OFFSET). An LSDj opens songs of its format and older (it upgrades them, writing its
    number), not newer ones: their data is read as its own older layout. Seen: LSDj 9.3.9 writes 22, 5.7.8 writes 4.

@@ -5,7 +5,7 @@
 // as 'sav'), each once. Never uploaded, never in the offline copy.
 import {parseSav, savBody, songBytes, SAV_SIZE} from './lsdj-sav.js';
 import {validateRom, listKits, crc32} from './lsdj-rom.js';
-import {lsdjVersion, versionText, lsdjFormat, songFormat, opens} from './lsdj-sets.js';
+import {lsdjVersion, versionText, lsdjLabel, lsdjFormat, songFormat, opens} from './lsdj-sets.js';
 
 export const KEY = 'dj-crate';
 
@@ -95,7 +95,7 @@ export function describe(item, bytesOf) {
   if (item.rom) {
     const b = bytesOf(item.rom);
     if (!b) out.missing = true;
-    else { out.version = versionText(lsdjVersion(b)); out.format = lsdjFormat(b); try { out.kits = listKits(b).map(k => k.name || `kit ${k.bank}`); } catch { /* not readable: none listed */ } }
+    else { out.version = lsdjLabel(b); out.format = lsdjFormat(b); try { out.kits = listKits(b).map(k => k.name || `kit ${k.bank}`); } catch { /* not readable: none listed */ } }
   }
   /* its songs its own LSDj can't open (saved by a newer one) */
   if (out.format != null) out.tooNew = out.songList.filter(x => !opens(out.format, x.format)).map(x => x.name);
