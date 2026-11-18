@@ -11,6 +11,14 @@
 // Krumhansl-Kessler major and minor key profiles; the best match is the key. Grooves, tables, arpeggios and the
 // instruments' own transposes are not counted.
 export const PARTS = [[0x0000, 0x0ff0], [0x1290, 0x1690], [0x2080, 0x3080], [0x3080, 0x3480], [0x7000, 0x7ff0]];
+/* the save reads (READ, chunk bytes each) that cover PARTS, each at a multiple of chunk: the FM-1 answers "bad request"
+   to any other offset (lsdj_link.h), and 0x1290 (the song table) is not one. Read from 0x1290 the deck asked for that
+   chunk every poll and stayed on "Key…" (Colin, 2026-11-17: never worked on an FM-1). */
+export function readOffsets(chunk = 128) {
+  const at = new Set();
+  for (const [a, b] of PARTS) for (let o = Math.floor(a / chunk) * chunk; o < b; o += chunk) at.add(o);
+  return [...at].sort((x, y) => x - y);
+}
 const SONG = 0x1290, CHAIN_PHR = 0x2080, CHAIN_TSP = 0x2880, INSTR = 0x3080, PHR_INSTR = 0x7000;
 const PULSE = 0, WAVE = 1;
 const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];

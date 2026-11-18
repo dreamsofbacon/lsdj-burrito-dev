@@ -28,7 +28,7 @@ import {popOut, bringBack, isOut} from './popout.js';
 import {pageColours} from './page-theme.js';
 import {mountCrate, setCrateHooks, dropOnDeck, crateRedraw, CRATE_TYPE} from './crate-ui.js';
 import {savHeader, HEADER, HEADER_SIZE, BLOCK_COUNT} from './lsdj-sav.js';
-import {PARTS as KEY_PARTS, songKeys} from './song-key.js';
+import {readOffsets as keyReads, songKeys} from './song-key.js';
 import {logEvent, logText, clearLog} from './conn-log.js';
 import {fromSlot, KEYS as PRESET_KEYS} from './presets.js';
 
@@ -681,7 +681,7 @@ export function rememberSav(key, name, crc) {
 /* the song on that FM-1 changed (songs sent, a crate card loaded): its key read again from the next poll */
 export function readSongAgain(key) { decks.forEach(d => { if (d.key === key) { d.songAt = null; d.songRead = null; } }); }
 const SONG_MS = 60000, SONG_READS = [8, 4];   /* (the crossfader posts VOLUME_SET past the queue: link.js post) */
-const songChunks = KEY_PARTS.flatMap(([a, b]) => Array.from({length: Math.ceil((b - a) / 128)}, (_, k) => a + k * 128));
+const songChunks = keyReads(128);   /* (each at a multiple of 128: the FM-1 takes no other) */
 async function deckSong(d, l) {
   if (!d.songRead && (d.songAt == null || now() - d.songAt > SONG_MS)) d.songRead = {next: 0, bytes: d.song?.slice() ?? new Uint8Array(0x8000)};
   const r = d.songRead, key = d.key;

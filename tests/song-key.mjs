@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // lsdj/song-key.js: a song's key from its notes, with made-up songs (node tests/song-key.mjs).
 import assert from 'node:assert/strict';
-import {pitchClasses, keyOf, songKeys, camelot} from '../lsdj/song-key.js';
+import {pitchClasses, keyOf, songKeys, camelot, PARTS, readOffsets} from '../lsdj/song-key.js';
 
 /* LSDj note value of a pitch class (0 = C) in octave 4 (1 = C3: 0x55 shows as C 9) */
 const N = (pc, oct = 4) => 1 + (oct - 3) * 12 + pc;
@@ -52,4 +52,12 @@ const aMinor = [N(9), 0, N(0, 5), 0, N(4, 5), 0, N(9), 0, N(2, 5), 0, N(5, 5), 0
 /* the Camelot wheel: every major and minor */
 assert.deepEqual([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5].map(t => camelot(t, false)), ['8B', '9B', '10B', '11B', '12B', '1B', '2B', '3B', '4B', '5B', '6B', '7B']);
 assert.deepEqual([9, 4, 11, 6, 1, 8, 3, 10, 5, 0, 7, 2].map(t => camelot(t, true)), ['8A', '9A', '10A', '11A', '12A', '1A', '2A', '3A', '4A', '5A', '6A', '7A']);
+/* the reads a deck makes: each at a multiple of 128 (the FM-1 refuses any other: "Key…" forever from 0x1290), and
+   together they cover every part the key needs */
+{
+  const at = readOffsets(128);
+  assert(at.every(o => o % 128 === 0), `aligned: ${at.filter(o => o % 128).map(o => o.toString(16))}`);
+  for (const [a, b] of PARTS) for (let x = a; x < b; x++) assert(at.some(o => o <= x && x < o + 128), `0x${x.toString(16)} read`);
+  assert(at.every(o => o + 128 <= 0x8000), 'within the song');
+}
 console.log('song-key: PASS (C major, A minor, a chain transpose up and down, drums left out, rows and held notes weigh, too few notes, the part playing now, the Camelot wheel)');

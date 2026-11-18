@@ -60,7 +60,7 @@ function fm1(n, title, fw = 'FM-1_997') {
     const send = (data, status) => d.slow?.[op] ? void setTimeout(reply(data, status), d.slow[op]) : queueMicrotask(reply(data, status));
     if (op === OP.INFO) { d.infos++; const info = Array(35).fill(0); info[0] = 1; info[34] = d.dev6 ? 8 : 0; [...fw].forEach((c, i) => info[1 + i] = c.charCodeAt(0)); [...title].forEach((c, i) => info[9 + i] = c.charCodeAt(0));
       const crc = crc32(d.save); [0, 8, 16, 24].forEach((s, i) => info[29 + i] = (crc >>> s) & 255); return send(info); }
-    if (op === OP.READ) { const off = body[0] | body[1] << 8 | body[2] << 16 | body[3] << 24; d.reads++; return send([...d.save.subarray(off, off + 128)]); }
+    if (op === OP.READ) { const off = body[0] | body[1] << 8 | body[2] << 16 | body[3] << 24; if (off % 128) return send([], 1); d.reads++; return send([...d.save.subarray(off, off + 128)]); }   /* (as the FM-1: a multiple of 128 only) */
     /* a .sav sent (Songs › Send, the crate): taken whole at COMMIT */
     if (op === OP.ABORT) { d.importing = null; return send(); }
     if (op === OP.BEGIN) { d.importing = new Uint8Array(0x20000); d.begins++; return send(); }
