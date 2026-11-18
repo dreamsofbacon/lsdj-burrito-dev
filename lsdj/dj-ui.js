@@ -906,7 +906,9 @@ function drawPresets(d) {
   const p = d.presets;
   row.hidden = !p;
   if (!p) return row.replaceChildren();
-  row.replaceChildren(...p.names.map((name, i) => {
+  /* (named: 1-8 alone read as song slots or hot cues, Colin's DJ test, 2026-11-17) */
+  const label = el('span', {className: 'dj-presets-label', textContent: 'FX PRESETS', title: "The FM-1's effect presets: a tap loads one on this deck"});
+  row.replaceChildren(label, ...p.names.map((name, i) => {
     const b = el('button', {type: 'button', className: 'dj-preset' + (name ? '' : ' empty') + (p.current === i ? ' on' : ''), textContent: String(i + 1),
       title: name ? `Preset ${i + 1}: ${name} (on the FM-1: EDIT, then ${PRESET_KEYS[i]})` : `Preset ${i + 1}: empty`,
       onclick: () => void deckPreset(d, i)});

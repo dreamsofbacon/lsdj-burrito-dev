@@ -133,9 +133,10 @@ export async function runDjUiTests() {
     // 2p. presets (0.9.98-dev.6): deck B's FM-1 has them, a strip of 8 (DUB current, slot 2 empty); deck A's doesn't
     //     (its firmware is older); a tap loads one (the current lit), an empty one says so and sends nothing
     { const deckEl = i => [...document.querySelectorAll('.dj-deck')][i], strip = i => deckEl(i).querySelector('.dj-presets');
-      await until(() => !strip(1).hidden && strip(1).children.length === 8, 'deck B: its presets strip');
+      await until(() => !strip(1).hidden && strip(1).querySelectorAll('.dj-preset').length === 8, 'deck B: its presets strip');
+      assert(strip(1).querySelector('.dj-presets-label')?.textContent === 'FX PRESETS', 'deck B: the strip says what it is');
       assert(strip(0).hidden, 'deck A: no presets strip (firmware without them)');
-      const btn = k => strip(1).children[k];
+      const btn = k => strip(1).querySelectorAll('.dj-preset')[k];
       assert(btn(0).classList.contains('on') && btn(1).classList.contains('empty') && /LOFI/.test(btn(2).title), `deck B's strip: ${strip(1).innerHTML}`);
       btn(2).click();
       await until(() => B.presetLoads.at(-1) === 2 && btn(2).classList.contains('on') && !btn(0).classList.contains('on'), `deck B: preset 3 loaded: ${B.presetLoads}`);
