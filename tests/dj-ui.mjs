@@ -728,8 +728,9 @@ export async function runDjUiTests() {
       await until(() => A.begins > heldFrom, 'held: it loads, unasked', 5000);
       assert(!ask(), 'held: no question');
       await until(() => /Deck A has "Friday"/.test(crate.querySelector('.crate-status').textContent) && !document.querySelector('.dj-deck.loading'), 'held: loaded', 20000);
-      /* an FM-1 whose LSDj changes the songs once it starts on them: the crate says it doesn't hold them, and why to look */
-      A.afterCommit = s => s.fill(0x11, 0, 64);
+      /* an FM-1 whose LSDj changes the songs once it starts on them (its song list: 0x8000 on): the crate says it doesn't
+         hold them, and why to look. (Its working song, the first 32 KiB, LSDj rewrites on every start: not "changed".) */
+      A.afterCommit = s => s.fill(0x11, 0x8000, 0x8040);
       cardBtn('Load A').click(); [...card().querySelectorAll('.crate-ask button')].find(b => b.textContent === 'Load A').click();
       await until(() => /doesn't hold the songs sent/.test(crate.querySelector('.crate-status').textContent) && !document.querySelector('.dj-deck.loading'), `not held: said: ${crate.querySelector('.crate-status').textContent}`, 20000);
       assert(/LSDj-AAA, firmware FM-1_99\d/.test(crate.querySelector('.crate-status').textContent), 'names its LSDj and firmware');
