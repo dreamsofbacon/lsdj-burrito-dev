@@ -234,3 +234,17 @@ export function buildSav(template, working, songs, active) {
 /* The songs of a parsed save as buildSav takes them. */
 export const songsOf = sav => sav.songs.map(s => ({slot: s.slot, nameBytes: sav.bytes.slice(NAMES + s.slot * 8, NAMES + s.slot * 8 + 8),
   version: s.version, song: songBytes(sav, s.slot)}));
+
+/* One save per song: each a copy of the save (its settings, header bytes) holding only that song, in slot 0, and
+   open (the working song), so LSDj starts on it: a DJ crate card a song, or a song to hand someone. Damaged songs
+   are left out. -> [{slot, name, bytes}] */
+export function splitSav(bytes) {
+  const sav = parseSav(savBody(bytes)), out = [];
+  for (const s of sav.songs) {
+    let song;
+    try { song = songBytes(sav, s.slot); } catch (e) { if (e instanceof SavError) continue; throw e; }
+    const nb = sav.bytes.slice(NAMES + s.slot * 8, NAMES + s.slot * 8 + 8);
+    out.push({slot: s.slot, name: s.name || `SLOT ${s.slot}`, bytes: buildSav(sav.bytes, song, [{slot: 0, nameBytes: nb, version: s.version, song}], 0)});
+  }
+  return out;
+}

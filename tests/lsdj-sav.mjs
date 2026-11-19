@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // lsdj/lsdj-sav.js: LSDj saves and .lsdsng songs, with made-up songs only (node tests/lsdj-sav.mjs).
 import assert from 'node:assert/strict';
-import {parseSav, savHeader, HEADER, HEADER_SIZE, songBytes, compressSong, buildSav, songsOf, readLsdsng, writeLsdsng, lsdsngOf, nameBytes, nameText,
+import {parseSav, savHeader, HEADER, HEADER_SIZE, songBytes, compressSong, buildSav, songsOf, readLsdsng, writeLsdsng, lsdsngOf, nameBytes, nameText, splitSav,
   SavError, SAV_SIZE, SONG_SIZE, BLOCK_SIZE, BLOCK_COUNT, DEFAULT_WAVE, DEFAULT_INSTRUMENT} from '../lsdj/lsdj-sav.js';
 
 let seed = 1;
@@ -86,4 +86,22 @@ assert.throws(() => parseSav(new Uint8Array(SAV_SIZE)), /not an LSDj save/);
   assert.throws(() => readLsdsng(new Uint8Array(5)), SavError);
 }
 
-console.log('PASS lsdj-sav: names, the header alone (savHeader), compress round trip (defaults, C0/E0 runs, blocks), saves built and read, rename/delete/add, too big, damaged');
+/* one song per save: each alone in slot 0, open, its name and version kept; the source untouched */
+{
+  const songs = [{slot: 3, name: 'ALPHA', version: 2, song: song(0)}, {slot: 0, name: 'BETA', version: 9, song: song(2)}, {slot: 7, name: 'GAMMA', version: 4, song: song(1)}];
+  const src = buildSav(blank(), song(1), songs, 3), before = src.slice();
+  const parts = splitSav(src);
+  assert.deepEqual(parts.map(p => p.name), ['BETA', 'ALPHA', 'GAMMA']);
+  for (const p of parts) {
+    const one = parseSav(p.bytes), want = songs.find(s => s.name === p.name);
+    assert.equal(one.songs.length, 1); assert.equal(one.songs[0].slot, 0); assert.equal(one.songs[0].name, want.name);
+    assert.equal(one.songs[0].version, want.version);
+    assert.deepEqual(songBytes(one, 0), want.song, `${p.name}: the same song`);
+    assert.equal(one.active, 0, 'open, so LSDj starts on it');
+    assert.deepEqual(one.working, want.song, 'it is the working song');
+  }
+  assert.deepEqual(src, before, 'the save split is unchanged');
+  assert.equal(splitSav(new Uint8Array([...src, ...new Uint8Array(16)])).length, 3, 'a save with a 16-byte footer too');
+}
+
+console.log('PASS lsdj-sav: one song per save, names, the header alone (savHeader), compress round trip (defaults, C0/E0 runs, blocks), saves built and read, rename/delete/add, too big, damaged');

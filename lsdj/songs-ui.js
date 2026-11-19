@@ -6,7 +6,8 @@
 // Kit names come from the user's own LSDj: the one chosen in Install, a ROM file chosen here, or the one on the
 // FM-1. Nothing is uploaded; works without an FM-1. Install's kit list shows the same ('songs-usage' event).
 // The parsing is lsdj-sav.js, lsdj-kit.js, lsdj-usage.js (tested in node).
-import {parseSav, songBytes, buildSav, readLsdsng, writeLsdsng, nameBytes, nameText, SavError, SAV_SIZE, SLOTS, BLOCK_COUNT} from './lsdj-sav.js';
+import {parseSav, songBytes, buildSav, readLsdsng, writeLsdsng, nameBytes, nameText, splitSav, SavError, SAV_SIZE, SLOTS, BLOCK_COUNT} from './lsdj-sav.js';
+import {zipStore} from './zip.js';
 import {kitSlots, kitSampleNibbles, BANK} from './lsdj-kit.js';
 import {checkRomFile} from './lsdj-rom.js';
 import {kitUsage, usageAcross, romFit, bestRom} from './lsdj-usage.js';
@@ -176,7 +177,7 @@ function draw() {
   if (!box) return;
   box.replaceChildren();
   drawNeed();
-  for (const id of ['st-add', 'st-download', 'st-send', 'st-crate']) $(id).disabled = !state.sav;
+  for (const id of ['st-add', 'st-download', 'st-send', 'st-crate', 'st-split', 'st-split-crate']) $(id).disabled = !state.sav;
   if (!state.sav) return;
   if (state.needs) box.append(el('p', {className: 'warn', textContent: `These are ${state.needs.title}'s songs. Their kits are in ${state.needs.title}'s LSDj, not in the .sav: ` +
     `install ${state.needs.title}'s LSDj on the FM-1 first, then press Send to the FM-1 (it checks the FM-1 has that LSDj).`}));
@@ -290,6 +291,24 @@ async function namesFromFm1() {
     if (m) { useRom(m.cart.bytes, `${cartName(m.cart)} (what the FM-1 has)`); return; }
   } catch { /* can't tell: names come from an LSDj chosen here */ }
 }
+/* one song per save (lsdj-sav.js splitSav): each song alone in a save of its own, open, so LSDj starts on it */
+const savName = (s, i, all) => `${String(i + 1).padStart(String(all.length).length, '0')} ${(s.name || 'song').trim().replace(/[^A-Za-z0-9 _-]/g, '_') || 'song'}.sav`;
+function splitSongs() {
+  const list = splitSav(state.sav.bytes);
+  if (!list.length) throw new SavError('No saved songs to split: save the song in LSDj first (the open, unsaved song is not one of them).');
+  return list;
+}
+async function splitDownload() {
+  const list = splitSongs();
+  download(zipStore(list.map((s, i, all) => ({name: savName(s, i, all), bytes: s.bytes}))), `${crateName().replace(/[^A-Za-z0-9 _-]/g, '_') || 'songs'} - one song per save.zip`);
+  say(`${list.length} save${list.length === 1 ? '' : 's'}, one song each, in a .zip. Each opens on its song in LSDj.`, 'ok');
+}
+async function splitCrate() {
+  const list = splitSongs();
+  if (list.length > 8 && !confirm(`Add ${list.length} cards to the DJ crate, one a song?`)) return;
+  for (const s of list) await addToCrate({name: s.name, sav: s.bytes});
+  say(`${list.length} card${list.length === 1 ? '' : 's'} in the DJ crate (Perform › DJ), one a song: each loads onto a deck straight into its song.`, 'ok');
+}
 /* a cartridge (Cartridges, or the picker here) for the kit names */
 function useCart(c) { useRom(c.bytes, cartName(c)); say(`Kit names from ${cartName(c)}.`, 'ok'); }
 export function useRom(rom, from, chosen = true) {
@@ -372,6 +391,9 @@ export function mountSongsUi(root) {
       b('Send to the FM-1', sendOpenSave, {id: 'st-send', disabled: true}),
       b('Add to the DJ crate', async () => { await addToCrate({name: crateName(), sav: state.sav.bytes}); say('In the DJ crate (Perform › DJ): drag it onto a deck, or press Load.', 'ok'); },
         {id: 'st-crate', disabled: true, title: 'Keep these songs in the DJ crate, to load onto a deck while the other plays'})),
+    el('div', {className: 'row'}, el('span', {className: 'hint', textContent: 'One song per save: '}),
+      b('Download a .sav per song (.zip)', splitDownload, {id: 'st-split', disabled: true, title: 'Each song alone in its own .sav, open, so LSDj starts on it'}),
+      b('Each song to the DJ crate', splitCrate, {id: 'st-split-crate', disabled: true, title: 'A crate card per song: each loads onto a deck straight into its song'})),
     el('div', {className: 'row'},
       b('Choose your LSDj (.gb)…', () => romIn.click(), {title: 'Pick one, or several: the one that fits these songs best is used'}), romIn,
       b('Read LSDj from the FM-1', async () => { say('Reading the installed LSDj from the FM-1 (no writes)…'); const rom = await withProgress(hooks.readRom); useRom(rom, 'the LSDj on the FM-1'); await rememberRom(rom, `LSDj read from the FM-1 ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb`, 'fm1'); say('Kit names read from the FM-1.', 'ok'); }),
