@@ -1411,6 +1411,7 @@ setCrateHooks({
     await l.importSave(bytes, pr); rememberSav(key, name, crc32(bytes));
   },
   info: key => crateLink(key).info(),
+  cartInfo: key => crateLink(key).cartridgeInfo(),
   volumeFull: async key => { try { await djLinkFor(key)?.volumeSet(127); } catch { /* older firmware, or gone: full at its next start */ } },
 }, {});
 /* ---------- Hear it here: the FM-1's USB sound on this computer (usb-audio.js; 0.9.98-dev.11 and newer) ----------

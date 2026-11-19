@@ -15,6 +15,9 @@ import {logEvent} from './conn-log.js';
 import {loadTemplate, prepareLsdjFirmware} from './lsdj-firmware.js';
 import {installOn, checkPackage, REPLUG} from './install.js';
 import {installing, setInstallTarget} from './install-ui.js';
+import {chooseLsdj} from './choose-lsdj.js';
+import {matchCart, notePrint} from './cartridges.js';
+import {zipStore} from './zip.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const btn = (text, onclick, props = {}) => el('button', {type: 'button', textContent: text, onclick, ...props});
@@ -22,7 +25,8 @@ const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } cat
 
 /* app.js: access() -> MIDIAccess, ports(key) -> {input, output} port ids, otherPorts(key) -> every other FM-1's port
    ids, release(key) (the page lets go of that FM-1), rescan() -> [{key, title}] the FM-1s found, readSave(key, pr),
-   readRom(key, pr), sendSave(key, bytes, name, pr), info(key) -> the link's INFO, volumeFull(key).
+   readRom(key, pr), sendSave(key, bytes, name, pr), info(key) -> the link's INFO, volumeFull(key), cartInfo(key) -> its
+   CART_INFO (which LSDj it has).
    dj-ui.js: decks() -> [{i, name, kind, key}], stop(i) (its clock, Play, Sync), assign(i, key), avoid(i) -> the
    other decks' and the mixer's port ids, loading(i, text | null, done, total). */
 let app = {}, dj = {};
@@ -39,14 +43,70 @@ const say = (text, cls = 'hint') => { if (statusEl) { statusEl.textContent = tex
 async function refreshFiles() { files = new Map((await libraryFiles()).map(f => [f.id, f])); }
 const bytesOf = id => files.get(id)?.bytes || null;
 
-/* a ROM and/or a save (bytes) -> a crate item; used by Songs & kits, Sets and New cart… too. color: a preset or
-   #rrggbb; img: a picture's bytes (cart-label.js shrinkImage) */
-export async function addToCrate({name, rom = null, sav = null, color = 'grey', img = null}) {
-  const r = rom ? await addToLibrary('rom', `${name}.gb`, rom) : null;
+/* a ROM and a save (bytes) -> a crate item; used by Songs & kits, Sets and New cart… too. color: a preset or
+   #rrggbb; img: a picture's bytes (cart-label.js shrinkImage). A cartridge is never made without its LSDj (Colin):
+   songs given alone ask which LSDj goes with them (choose-lsdj.js; prefer: a cartridge id to pick first). -> the
+   item, or null (cancelled: nothing added). An LSDj alone is a cartridge with no songs yet. */
+export async function addToCrate({name, rom = null, sav = null, color = 'grey', img = null, prefer = null}) {
+  if (!rom && !sav) return null;
+  if (!rom) {
+    const c = await chooseLsdj({title: name, savs: [sav], prefer, action: 'Add to the crate'});
+    if (!c) return null;
+    rom = c.bytes;
+  }
+  const r = await addToLibrary('rom', `${name}.gb`, rom);
   const s = sav ? await addToLibrary('sav', `${name}.sav`, sav, {crc: crc32(sav)}) : null;   /* (crc: backups.js knows it kept) */
   const p = img ? await addToLibrary('img', `${name}.jpg`, img) : null;
   items = addItem(items, {name, rom: r?.id || null, sav: s?.id || null, color, img: p?.id || null});
   save(); await refreshFiles(); setOpen(true); draw();
+  return items.find(i => i.rom === r.id && i.sav === (s?.id || null)) ?? null;
+}
+/* does a deck's FM-1 have this LSDj already (its CART_INFO matches this cartridge, cartridges.js)? Then a card's
+   songs go alone, in seconds, as before every card had its LSDj; else the LSDj is installed first. false: it hasn't,
+   or can't tell */
+async function hasLsdj(key, romId) {
+  try { return (await matchCart((await app.cartInfo(key)).dataCrc, null, {only: [romId]}))?.cart.id === romId; } catch { return false; }
+}
+/* a card that has songs but no LSDj (made before cartridges needed one): its LSDj chosen now */
+async function completeItem(item) {
+  const sav = bytesOf(item.sav);
+  const c = await chooseLsdj({title: item.name, savs: sav ? [sav] : [], action: 'Put it in this cartridge'});
+  if (!c) return;
+  const r = await addToLibrary('rom', `${item.name}.gb`, c.bytes);
+  items = items.map(i => i.id === item.id ? {...i, rom: r.id} : i); save(); await refreshFiles(); drawList();
+  say(`${item.name}: a whole cartridge now, with ${c.name}.`, 'ok');
+}
+/* complete cartridges (an LSDj and its songs) out as files: each a folder with NAME.gb and NAME.sav (the same name,
+   so emulators and flash carts pair them). Cards without an LSDj are left out (said). */
+const safeName = t => String(t || 'cartridge').trim().replace(/[^A-Za-z0-9 _().-]+/g, '_').slice(0, 60) || 'cartridge';
+function cartFiles(item, folder = '') {
+  const n = safeName(item.name), rom = bytesOf(item.rom), sav = item.sav ? bytesOf(item.sav) : null;
+  if (!rom) return null;
+  return [{name: `${folder}${n}.gb`, bytes: rom}, ...(sav ? [{name: `${folder}${n}.sav`, bytes: sav}] : [])];
+}
+function downloadZip(files, name) {
+  const a = el('a', {href: URL.createObjectURL(new Blob([zipStore(files)], {type: 'application/zip'})), download: name});
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+function exportCart(item) {
+  const f = cartFiles(item);
+  if (!f) return say(`${item.name} has no LSDj: choose its LSDj first. Nothing was exported.`, 'warn');
+  downloadZip(f, `${safeName(item.name)}.zip`);
+  say(`${item.name}: its LSDj and songs, as ${safeName(item.name)}.gb and .sav in a .zip.`, 'ok');
+}
+function exportAll() {
+  const done = [], left = [], files = [], used = new Set();
+  for (const i of items) {
+    let dir = safeName(i.name);
+    for (let k = 2; used.has(dir.toLowerCase()); k++) dir = `${safeName(i.name)} ${k}`;
+    const f = cartFiles(i, `${dir}/`);
+    if (!f) { left.push(i.name); continue; }
+    used.add(dir.toLowerCase()); files.push(...f); done.push(i.name);
+  }
+  if (!done.length) return say('No complete cartridges to export: each needs its LSDj. Nothing was exported.', 'warn');
+  downloadZip(files, 'lsdj-cartridges.zip');
+  say(`Exported ${done.length} cartridge${done.length === 1 ? '' : 's'} (each a folder with its .gb and .sav).` +
+    (left.length ? ` Left out, no LSDj: ${left.join(', ')}. Press Choose its LSDj on them to include them.` : ''), left.length ? 'warn' : 'ok');
 }
 /* files no item uses any more, out of the library (saves and pictures: ROMs are shared with Sets) */
 async function tidy(before) {
@@ -65,11 +125,18 @@ async function setPicture(item, file) {
 }
 
 async function openFiles(list) {
+  const byName = new Map();
   for (const f of list) {
     const bytes = new Uint8Array(await f.arrayBuffer()), kind = fileKind(bytes), name = f.name.replace(/\.(sav|gbc?)$/i, '');
     if (!kind) { say(`${f.name} is neither an LSDj save nor an LSDj ROM.`, 'warn'); continue; }
-    await addToCrate({name, [kind]: kind === 'sav' ? savBody(bytes).slice() : bytes});   /* (a save's footer left out) */
+    const e = byName.get(name.toLowerCase()) ?? {name};
+    e[kind] = kind === 'sav' ? savBody(bytes).slice() : bytes;   /* (a save's footer left out) */
+    byName.set(name.toLowerCase(), e);
   }
+  /* lsdj.gb with lsdj.sav: one cartridge; a .sav alone asks which LSDj goes with it */
+  let n = 0;
+  for (const e of byName.values()) if (await addToCrate(e)) n++;
+  if (n) say(`${n} cartridge${n === 1 ? '' : 's'} in the crate.`, 'ok');
 }
 
 /* after songs are sent: does that FM-1 hold them once LSDj has started on them? -> {bad: what to say} when it doesn't,
@@ -94,15 +161,23 @@ export async function checkHeld(key, sav, deck, hooks = app, pause = wait) {
   return {bad: `the FM-1 (${what}) doesn't hold the songs sent: its LSDj may have kept or changed them. See the Log`};
 }
 const fm1Decks = () => (dj.decks?.() || []).filter(d => d.kind === 'fm1' && d.key != null);
-async function grab(d, withRom) {
+/* the LSDj a deck's FM-1 has: the cartridge kept here that it matches (nothing read), else read from it */
+async function deckLsdj(d) {
+  try {
+    const m = await matchCart((await app.cartInfo(d.key)).dataCrc, null, {only: []});   /* (saved CRCs only: B plays on) */
+    if (m) return {rom: m.cart.bytes, kept: true};
+  } catch { /* older firmware, or can't tell: read it */ }
+  return {rom: await app.readRom(d.key, (n, t) => dj.loading?.(d.i, 'Copying its LSDj (2 of 2)…', n, t)), kept: false};
+}
+async function grab(d) {
   if (busyDeck >= 0) return;
   busyDeck = d.i; draw();
   try {
-    const sav = await app.readSave(d.key, (n, t) => dj.loading?.(d.i, withRom ? 'Copying its songs (1 of 2)…' : 'Copying its songs…', n, t));
-    const rom = withRom ? await app.readRom(d.key, (n, t) => dj.loading?.(d.i, 'Copying its LSDj (2 of 2)…', n, t)) : null;
+    const sav = await app.readSave(d.key, (n, t) => dj.loading?.(d.i, 'Copying its songs (1 of 2)…', n, t));
+    const {rom, kept} = await deckLsdj(d);
     const title = (await app.info?.(d.key).catch(() => null))?.title;
     await addToCrate({name: `Deck ${d.name}${title ? ` ${title}` : ''} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`, rom, sav});
-    say(`Deck ${d.name}'s ${withRom ? 'LSDj and songs are' : 'songs are'} in the crate.`, 'ok');
+    say(`Deck ${d.name}'s songs and LSDj are in the crate as one cartridge${kept ? ' (its LSDj from your cartridges: nothing more read)' : ''}.`, 'ok');
   } catch (e) { say(`Deck ${d.name}: ${e.message}`, 'bad'); }
   finally { busyDeck = -1; dj.loading?.(d.i, null); draw(); }
 }
@@ -131,9 +206,13 @@ export async function loadOnto(id, i, slot = null) {
   if (d.kind !== 'fm1' || d.key == null) { draw(); return say(`Deck ${d.name}: choose an FM-1 for it first.`, 'warn'); }
   if (busyDeck >= 0 || installing()) { draw(); return say('Another FM-1 is loading. Wait for it to finish.', 'warn'); }
   await refreshFiles();
-  const rom = item.rom && bytesOf(item.rom);
-  let sav = item.sav && bytesOf(item.sav), label = item.name;
+  let rom = item.rom && bytesOf(item.rom), sav = item.sav && bytesOf(item.sav), label = item.name;
   if ((item.rom && !rom) || (item.sav && !sav)) { draw(); return say(`${item.name}: its file is no longer in this browser. Add it again.`, 'bad'); }
+  /* its FM-1 has this LSDj already: only the songs go (nothing installed) */
+  if (rom && await hasLsdj(d.key, item.rom)) {
+    if (!sav) { draw(); return say(`Deck ${d.name}'s FM-1 already has ${item.name}'s LSDj: nothing to load.`, 'ok'); }
+    rom = null;
+  }
   if (sav && slot != null) {   /* straight into the chosen song */
     try { const song = describe(item, bytesOf).songList.find(x => x.slot === slot); sav = withOpenSong(sav, slot); label = `${item.name} › ${song?.name ?? slot}`; }
     catch (e) { draw(); return say(`${item.name}: ${e.message}`, 'bad'); }
@@ -184,6 +263,8 @@ export async function loadOnto(id, i, slot = null) {
         show(s.startsWith('replug') ? names[s] : `${names[s]}…`); },
       onProgress: (n, t) => show(`${names[step === 'swap' ? 'swap' : 'write']}…`, n, t)});
     setInstallTarget(null);
+    /* what that FM-1 reports now: kept with the card's cartridge, so its next load knows (cartridges.js) */
+    if (pkg.slot) void notePrint(item.rom, new DataView(pkg.slot.buffer, pkg.slot.byteOffset).getUint32(16, true) >>> 0, listKits(rom).map(k => k.bank)).catch(() => {});
     /* the restarted FM-1: the one found now that wasn't there before (none restarted: it already had this LSDj) */
     await wait(1500);
     const fresh = (await app.rescan()).filter(x => !others.has(x.key));
@@ -237,10 +318,12 @@ export function dropOnDeck(e, i) {
 }
 function askLoad(id, i, slot = null) {
   asking = {id, i, slot}; setOpen(true); drawList();
-  /* songs alone: the LSDj its FM-1 runs (its title, then that LSDj's song format), to say when it can't open them */
+  /* songs alone: the LSDj its FM-1 runs (its title, then that LSDj's song format), to say when it can't open them; a
+     card with its LSDj: whether that FM-1 has it already (then only the songs go) */
   const item = items.find(x => x.id === id), d = fm1Decks().find(x => x.i === i);
-  if (!item || item.rom || !d) return;
+  if (!item || !d) return;
   const ask = asking;
+  if (item.rom) { void hasLsdj(d.key, item.rom).then(has => { if (asking === ask) { ask.has = has; drawList(); } }); return; }
   void Promise.resolve(app.info?.(d.key)).then(info => {
     if (asking !== ask || !info?.title) return;
     const roms = [...files.values()].filter(f => f.kind === 'rom').map(f => f.bytes);
@@ -290,11 +373,14 @@ function askBox(item, t) {
       btn('Cancel', () => { asking = null; drawList(); })));
   const d = (dj.decks?.() || [])[asking.i];
   const song = asking.slot != null ? t.songList.find(x => x.slot === asking.slot) : null;
-  const what = (item.rom ? `Install this LSDj on deck ${d?.name}'s FM-1 (about a minute; it restarts)${item.sav ? ', then its songs' : ''}?`
+  const checking = item.rom && asking.has === undefined, install = item.rom && asking.has === false;
+  const what = checking ? `Checking whether deck ${d?.name}'s FM-1 already has this LSDj…`
+    : (asking.has && item.sav ? `Deck ${d?.name}'s FM-1 already has this LSDj: replace its songs with these?`
+    : install ? `Install this LSDj on deck ${d?.name}'s FM-1 (about a minute; it restarts)${item.sav ? ', then its songs' : ''}?`
     : `Replace deck ${d?.name}'s songs with these?`) + (song ? ` It opens on ${song.name}.` : '');
   return el('div', {className: 'crate-ask', role: 'alertdialog', ariaLabel: `Load ${item.name} on deck ${d?.name}`},
     el('p', {textContent: what}),
-    el('p', {className: 'hint', textContent: `Deck ${d?.name} stops; the other keeps playing.` + (item.rom ? ' Experimental firmware: keep the cable in.' : '') +
+    el('p', {className: 'hint', textContent: `Deck ${d?.name} stops; the other keeps playing.` + (install ? ' Experimental firmware: keep the cable in.' : '') +
       (heldBy(item, t).includes(d?.name) ? '' : ' Grab its songs first to keep them.')}),
     (() => { const n = item.rom ? t.tooNew : tooNewFor(t, asking.fm1, asking.slot), lsdj = item.rom ? `This card's LSDj (${t.version})` : `Deck ${d?.name}'s FM-1 runs ${asking.fm1?.title}, which`;
       return n.length ? el('p', {className: 'warn crate-needs', textContent: `${lsdj} can't open ${n.join(', ')}: saved by a newer LSDj. Load an LSDj that can (a cart made with it, or its .gb) first.`}) : null; })(),
@@ -307,7 +393,7 @@ function askBox(item, t) {
         : unknown.length ? `The page can't read the format of ${unknown.join(', ')}, so it can't check ${unknown.length === 1 ? 'it opens' : 'they open'} in this LSDj.` : '';
       return text ? el('p', {className: 'hint crate-needs', textContent: `${text} Load it if you know it does.`}) : null; })(),
     el('div', {className: 'crate-ask-acts'},
-      btn(`Load ${d?.name}`, () => void loadOnto(item.id, asking.i, asking.slot), {className: 'primary'}),
+      btn(`Load ${d?.name}`, () => void loadOnto(item.id, asking.i, asking.slot), {className: 'primary', disabled: checking}),
       btn('Cancel', () => { asking = null; drawList(); })));
 }
 
@@ -337,6 +423,7 @@ function card(item, reorder) {
     onchange: () => { items = renameItem(items, item.id, name.value.trim()); save(); }});
   name.setAttribute('aria-label', 'Name');
   const meta = [t.version ? `LSDj ${t.version}` : null, item.sav ? (t.missing ? 'file missing' : `${t.songs.length} song${t.songs.length === 1 ? '' : 's'}`) : 'no songs'].filter(Boolean).join(' · ');
+  const noLsdj = !item.rom && item.sav;
   const canPair = pairFrom && pairFrom !== item.id && (() => { const o = items.find(x => x.id === pairFrom); return o && !!o.rom !== !!item.rom && !!o.sav !== !!item.sav; })();
   const editing = labelOpen.has(item.id);
   const colour = btn('', () => { if (editing) labelOpen.delete(item.id); else labelOpen.add(item.id); drawList(); },
@@ -375,13 +462,16 @@ function card(item, reorder) {
       name,
       el('p', {className: 'crate-meta', textContent: meta, title: t.songs.join(', ')}),
       t.tooNew.length ? el('p', {className: 'crate-needs', textContent: `LSDj ${t.version} can't open ${t.tooNew.join(', ')} (saved by a newer LSDj)`}) : null,
+      noLsdj ? el('p', {className: 'crate-needs', textContent: 'No LSDj: not a whole cartridge. Choose its LSDj.'}) : null,
       editor),
     songs,
     el('div', {className: 'crate-acts'},
       ...decks.map(d => loadBtn(item, d, t)),
       canPair ? btn('Pair here', async () => { const before = items; items = pairItems(items, pairFrom, item.id); pairFrom = null; save(); await tidy(before); drawList(); }, {className: 'on'})
-        : !(item.rom && item.sav) ? btn(pairFrom === item.id ? 'Cancel' : 'Pair', () => { pairFrom = pairFrom === item.id ? null : item.id; drawList(); },
-          {title: item.rom ? 'Pair this LSDj with a .sav: then press Pair here on the .sav' : 'Pair this .sav with an LSDj: then press Pair here on the LSDj'}) : null,
+        : noLsdj ? btn('Choose its LSDj', () => void completeItem(item), {className: 'on', title: 'A cartridge needs its LSDj: the songs\' kit samples are in it'})
+        : !item.sav ? btn(pairFrom === item.id ? 'Cancel' : 'Pair', () => { pairFrom = pairFrom === item.id ? null : item.id; drawList(); },
+          {title: 'Pair this LSDj with songs: then press Pair here on a card with songs'}) : null,
+      item.rom ? btn('⇩', () => exportCart(item), {title: 'Download this cartridge: its LSDj (.gb) and songs (.sav), the same name', ariaLabel: `Download ${item.name}`}) : null,
       btn('✕', () => { asking = {id: item.id, remove: true}; drawList(); }, {title: 'Take it out of the crate', ariaLabel: `Remove ${item.name}`})),
     asking?.id === item.id && view === 'cards' ? askBox(item, t) : null);
   c.dataset.id = item.id; paintLabel(c, item.color);
@@ -394,11 +484,8 @@ let listEl = null, grabsEl = null, countEl = null, setOpen = () => {};
 function drawGrabs() {
   if (!grabsEl) return;
   const decks = fm1Decks();
-  const withRom = el('input', {type: 'checkbox', checked: store.get('dj-crate-rom', '0') === '1',
-    onchange: () => store.set('dj-crate-rom', withRom.checked ? '1' : '0')});
-  grabsEl.replaceChildren(...decks.map(d => btn(`Grab ${d.name}`, () => void grab(d, withRom.checked), {disabled: busyDeck >= 0,
-    title: `Put deck ${d.name}'s songs${withRom.checked ? ' and LSDj' : ''} in the crate (a copy; the FM-1 keeps playing)`})),
-    decks.length ? el('label', {className: 'hint'}, withRom, ' with its LSDj') : null);
+  grabsEl.replaceChildren(...decks.map(d => btn(`Grab ${d.name}`, () => void grab(d), {disabled: busyDeck >= 0,
+    title: `Put deck ${d.name}'s songs and LSDj in the crate as one cartridge (a copy; the FM-1 keeps playing)`})));
 }
 function drawList() {
   if (!listEl) return;
@@ -424,7 +511,7 @@ function drawList() {
   }
   listEl.replaceChildren(...(items.length
     ? shown.length ? shown.map(i => card(i, reorder)) : [el('p', {className: 'hint', textContent: `Nothing matches "${query}".`})]
-    : [el('p', {className: 'hint', textContent: 'Empty. Open a .sav or LSDj ROM, grab a deck\'s songs, or use "Add to the DJ crate" in Songs & kits or Sets. Then drag a card onto a deck, or press Load.'})]));
+    : [el('p', {className: 'hint', textContent: 'Empty. Open an LSDj and its .sav, grab a deck, or use "Add to the DJ crate" in Songs & kits or Sets: each card is a whole cartridge, an LSDj and its songs. Then drag a card onto a deck, or press Load.'})]));
 }
 function draw() { drawGrabs(); drawList(); }
 
@@ -461,8 +548,9 @@ export async function mountCrate(box) {
   setOpen = openCrate;
   root.replaceChildren(
     el('div', {className: 'crate-top'}, toggle, countEl, views, search, sorter,
-      btn('Open files…', () => pick.click(), {title: 'An LSDj save (.sav) or LSDj ROM (.gb): kept in this browser only'}), pick,
-      btn('New cart…', () => void openCartMaker({addToCrate}), {className: 'crate-new', title: 'Make carts from songs, projects and your LSDj files: each holds only the kits its songs play'}), grabsEl),
+      btn('Open files…', () => pick.click(), {title: 'An LSDj (.gb) and its songs (.sav): pick both (the same name pairs them), or a .sav alone and choose its LSDj. Kept in this browser only'}), pick,
+      btn('New cart…', () => void openCartMaker({addToCrate}), {className: 'crate-new', title: 'Make carts from songs, projects and your LSDj files: each holds only the kits its songs play'}),
+      btn('Export cartridges', exportAll, {title: 'Every whole cartridge (LSDj + songs) as a .zip: a folder each with its .gb and .sav'}), grabsEl),
     el('div', {className: 'crate-body'}, listEl, statusEl));
   openCrate(store.get('dj-crate-open', '0') === '1');
   await refreshFiles();

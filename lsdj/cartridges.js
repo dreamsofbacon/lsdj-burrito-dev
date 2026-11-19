@@ -86,12 +86,13 @@ export async function dataCrcOf(rom, kits) {
 }
 /* the cartridge an FM-1 has (its dataCrc) -> {cart, kits} or null. A CRC kept with a cartridge first; else each
    cartridge with the kits it's set to install, then with all its kits (installs from before cartridges kept CRCs),
-   and a match found that way is kept. */
-export async function matchCart(dataCrc, list = null) {
+   and a match found that way is kept. only: work out just these cartridge ids (saved CRCs are always looked at). */
+export async function matchCart(dataCrc, list = null, {only = null} = {}) {
   list ??= await cartridges();
   dataCrc >>>= 0;
   for (const c of list) { const p = (c.prints || []).find(x => x.dataCrc >>> 0 === dataCrc); if (p) return {cart: c, kits: p.kits}; }
-  for (const c of list) {
+  /* only: the ids worth working out (the DJ crate: just the card's own, so a playing deck's clock isn't held up) */
+  for (const c of only ? list.filter(x => only.includes(x.id)) : list) {
     const all = listKits(c.bytes).map(k => k.bank);
     for (const kits of c.kits && c.kits.join() !== all.join() ? [c.kits, all] : [all]) {
       let crc = null;

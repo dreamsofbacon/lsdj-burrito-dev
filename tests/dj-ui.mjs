@@ -7,7 +7,10 @@
 //   starts / stops its deck, the crossfader sets its two channel volumes (CC 7).
 import {OP, crc32} from '../lsdj/link.js';
 import {djState, rememberSav, readSongAgain} from '../lsdj/dj-ui.js';
-import {addToCrate} from '../lsdj/crate-ui.js';
+import {addToCrate, setCrateHooks} from '../lsdj/crate-ui.js';
+import {dataCrcOf} from '../lsdj/cartridges.js';
+import {listKits} from '../lsdj/lsdj-rom.js';
+import {lsdj as fakeLsdj} from './lsdj-fixtures.mjs';
 import {unpackFx, unpackSettings, packSettings, PRESETS, unpackMidi} from '../lsdj/fx-model.js';
 import {pageColours} from '../lsdj/page-theme.js';
 import {crossfade, offset} from '../lsdj/dj.js';
@@ -690,7 +693,11 @@ export async function runDjUiTests() {
     await until(() => clocks(B) > 0, 'deck B playing');
     const song = n => new Uint8Array(SONG_SIZE).map((_, k) => (k * n + n) & 0x7f);
     const friday = buildSav(fakeSave([], 0), song(9), [{slot: 0, name: 'HOUSE', song: song(3)}, {slot: 1, name: 'ACID', song: song(5)}], 0);
-    await addToCrate({name: 'Friday', sav: friday});
+    /* a cartridge is never made without its LSDj: Friday's, which both FM-1s have already (CART_INFO, stood in for
+       here: the pretend FM-1s don't answer it), so a Load sends only the songs and Grab takes the LSDj kept here */
+    const fridayRom = fakeLsdj('9.3.9', []), fridayCrc = await dataCrcOf(fridayRom, listKits(fridayRom).map(k => k.bank));
+    setCrateHooks({cartInfo: async () => ({size: 0, headerCrc: 0, dataCrc: fridayCrc})});
+    await addToCrate({name: 'Friday', rom: fridayRom, sav: friday});
     const crate = document.querySelector('.dj-crate');
     const cart = name => [...crate.querySelectorAll('.crate-cart')].find(c => c.querySelector('.crate-name').value === name);
     const card = () => cart('Friday');
@@ -724,12 +731,13 @@ export async function runDjUiTests() {
       /* a click asks on the card; Cancel: nothing sent */
       cardBtn('Load A').click();
       const ask = () => card().querySelector('.crate-ask');
-      assert(ask() && /Replace deck A's songs/.test(ask().textContent), `asked on the card: ${card().textContent}`);
+      await until(() => ask() && /already has this LSDj: replace its songs/.test(ask().textContent), `asked on the card: ${card().textContent}`);
       const beginsA = A.begins;
       [...ask().querySelectorAll('button')].find(b => b.textContent === 'Cancel').click();
       await sleep(300);
       assert(!ask() && A.begins === beginsA, 'Cancel: nothing sent');
       cardBtn('Load A').click();
+      await until(() => [...ask().querySelectorAll('button')].find(b => b.textContent === 'Load A' && !b.disabled), 'asked (its FM-1 has this LSDj)');
       [...ask().querySelectorAll('button')].find(b => b.textContent === 'Load A').click();
       await until(() => crc32(A.save) === crc32(friday), 'FM-1 A has the crate\'s songs', 20000);
       await until(() => /Deck A has "Friday"/.test(crate.textContent), `the crate says so: ${crate.querySelector('.crate-status').textContent}`);
@@ -752,7 +760,9 @@ export async function runDjUiTests() {
       /* an FM-1 whose LSDj changes the songs once it starts on them (its song list: 0x8000 on): the crate says it doesn't
          hold them, and why to look. (Its working song, the first 32 KiB, LSDj rewrites on every start: not "changed".) */
       A.afterCommit = s => s.fill(0x11, 0x8000, 0x8040);
-      cardBtn('Load A').click(); [...card().querySelectorAll('.crate-ask button')].find(b => b.textContent === 'Load A').click();
+      cardBtn('Load A').click();
+      await until(() => [...card().querySelectorAll('.crate-ask button')].find(b => b.textContent === 'Load A' && !b.disabled), 'asked (its FM-1 has this LSDj)');
+      [...card().querySelectorAll('.crate-ask button')].find(b => b.textContent === 'Load A').click();
       await until(() => /doesn't hold the songs sent/.test(crate.querySelector('.crate-status').textContent) && !document.querySelector('.dj-deck.loading'), `not held: said: ${crate.querySelector('.crate-status').textContent}`, 20000);
       assert(/LSDj-AAA, firmware FM-1_99\d/.test(crate.querySelector('.crate-status').textContent), 'names its LSDj and firmware');
       A.afterCommit = null;
@@ -761,7 +771,7 @@ export async function runDjUiTests() {
       const row = name => [...crate.querySelectorAll('.crate-songview .crate-song')].find(r => r.querySelector('.crate-song-name').textContent === name);
       await until(() => row('HOUSE') && row('ACID'), `Songs: both: ${crate.textContent}`);
       [...row('ACID').querySelectorAll('.crate-song-acts button')].find(b => b.textContent === 'A').click();
-      assert(row('ACID').querySelector('.crate-ask') && /opens on ACID/.test(row('ACID').textContent), `asked on the row: ${row('ACID').textContent}`);
+      await until(() => row('ACID').querySelector('.crate-ask') && /opens on ACID/.test(row('ACID').textContent), `asked on the row: ${row('ACID').textContent}`);
       [...row('ACID').querySelectorAll('.crate-ask button')].find(b => b.textContent === 'Load A').click();
       await until(() => A.save[0x8140] === 1 && A.save.subarray(0, 64).every((b, k) => b === song(5)[k]), 'FM-1 A opens on ACID', 20000);
       await until(() => /Deck A has "Friday › ACID"/.test(crate.querySelector('.crate-status').textContent), 'said');

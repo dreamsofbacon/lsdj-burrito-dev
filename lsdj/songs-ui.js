@@ -17,6 +17,8 @@ import {backups, KEEP} from './backups.js';
 import {storageState} from './kit-library.js';
 import {cartridges, cartName, matchCart} from './cartridges.js';
 import {cartPicker} from './carts-ui.js';
+import {chooseLsdj} from './choose-lsdj.js';
+import {hashOf} from './kit-library.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
@@ -298,16 +300,29 @@ function splitSongs() {
   if (!list.length) throw new SavError('No saved songs to split: save the song in LSDj first (the open, unsaved song is not one of them).');
   return list;
 }
+/* the LSDj for a cartridge of these songs: asked (choose-lsdj.js), the one chosen here picked first */
+async function lsdjFor(title) {
+  const prefer = state.rom && state.romChosen ? await hashOf(state.rom) : null;
+  return chooseLsdj({title, savs: [state.sav.bytes], prefer, action: 'Use this LSDj'});
+}
 async function splitDownload() {
-  const list = splitSongs();
-  download(zipStore(list.map((s, i, all) => ({name: savName(s, i, all), bytes: s.bytes}))), `${crateName().replace(/[^A-Za-z0-9 _-]/g, '_') || 'songs'} - one song per save.zip`);
-  say(`${list.length} save${list.length === 1 ? '' : 's'}, one song each, in a .zip. Each opens on its song in LSDj.`, 'ok');
+  const list = splitSongs(), c = await lsdjFor(`these ${list.length} songs`);
+  if (!c) return say('Nothing was exported: a cartridge needs its LSDj.', 'warn');
+  const files = list.flatMap((s, i, all) => { const n = savName(s, i, all).replace(/\.sav$/, ''); return [{name: `${n}/${n}.gb`, bytes: c.bytes}, {name: `${n}/${n}.sav`, bytes: s.bytes}]; });
+  download(zipStore(files), `${crateName().replace(/[^A-Za-z0-9 _-]/g, '_') || 'songs'} - a cartridge per song.zip`);
+  say(`${list.length} cartridge${list.length === 1 ? '' : 's'} in a .zip, one a song: a folder each with ${c.name} as NAME.gb and the song as NAME.sav, opening on its song.`, 'ok');
 }
 async function splitCrate() {
-  const list = splitSongs();
-  if (list.length > 8 && !confirm(`Add ${list.length} cards to the DJ crate, one a song?`)) return;
-  for (const s of list) await addToCrate({name: s.name, sav: s.bytes});
-  say(`${list.length} card${list.length === 1 ? '' : 's'} in the DJ crate (Perform › DJ), one a song: each loads onto a deck straight into its song.`, 'ok');
+  const list = splitSongs(), c = await lsdjFor(`these ${list.length} songs`);
+  if (!c) return say('Nothing was added: a cartridge needs its LSDj.', 'warn');
+  for (const s of list) await addToCrate({name: s.name, rom: c.bytes, sav: s.bytes});
+  say(`${list.length} cartridge${list.length === 1 ? '' : 's'} in the DJ crate (Perform › DJ), one a song with ${c.name}: each loads onto a deck straight into its song.`, 'ok');
+}
+async function wholeToCrate() {
+  const c = await lsdjFor(crateName());
+  if (!c) return say('Nothing was added: a cartridge needs its LSDj.', 'warn');
+  await addToCrate({name: crateName(), rom: c.bytes, sav: state.sav.bytes});
+  say(`In the DJ crate (Perform › DJ) with ${c.name}: drag it onto a deck, or press Load.`, 'ok');
 }
 /* a cartridge (Cartridges, or the picker here) for the kit names */
 function useCart(c) { useRom(c.bytes, cartName(c)); say(`Kit names from ${cartName(c)}.`, 'ok'); }
@@ -389,11 +404,11 @@ export function mountSongsUi(root) {
       b('Add .lsdsng songs…', () => songIn.click(), {id: 'st-add', disabled: true}), songIn,
       b('Download .sav', () => download(state.sav.bytes, 'lsdj.sav'), {id: 'st-download', disabled: true}),
       b('Send to the FM-1', sendOpenSave, {id: 'st-send', disabled: true}),
-      b('Add to the DJ crate', async () => { await addToCrate({name: crateName(), sav: state.sav.bytes}); say('In the DJ crate (Perform › DJ): drag it onto a deck, or press Load.', 'ok'); },
-        {id: 'st-crate', disabled: true, title: 'Keep these songs in the DJ crate, to load onto a deck while the other plays'})),
-    el('div', {className: 'row'}, el('span', {className: 'hint', textContent: 'One song per save: '}),
-      b('Download a .sav per song (.zip)', splitDownload, {id: 'st-split', disabled: true, title: 'Each song alone in its own .sav, open, so LSDj starts on it'}),
-      b('Each song to the DJ crate', splitCrate, {id: 'st-split-crate', disabled: true, title: 'A crate card per song: each loads onto a deck straight into its song'})),
+      b('Add to the DJ crate', wholeToCrate,
+        {id: 'st-crate', disabled: true, title: 'These songs and their LSDj, as one cartridge in the DJ crate, to load onto a deck while the other plays'})),
+    el('div', {className: 'row'}, el('span', {className: 'hint', textContent: 'A cartridge per song: '}),
+      b('Download them (.zip)', splitDownload, {id: 'st-split', disabled: true, title: 'Each song alone in its own .sav (open, so LSDj starts on it) with its LSDj: a folder a song, NAME.gb and NAME.sav'}),
+      b('Each song to the DJ crate', splitCrate, {id: 'st-split-crate', disabled: true, title: 'A crate cartridge per song, with its LSDj: each loads onto a deck straight into its song'})),
     el('div', {className: 'row'},
       b('Choose your LSDj (.gb)…', () => romIn.click(), {title: 'Pick one, or several: the one that fits these songs best is used'}), romIn,
       b('Read LSDj from the FM-1', async () => { say('Reading the installed LSDj from the FM-1 (no writes)…'); const rom = await withProgress(hooks.readRom); useRom(rom, 'the LSDj on the FM-1'); await rememberRom(rom, `LSDj read from the FM-1 ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb`, 'fm1'); say('Kit names read from the FM-1.', 'ok'); }),
