@@ -6,7 +6,7 @@
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48"><link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>Dreamy_bacon's LSDJ Burrito</title>
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
-<link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/backups.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
+<link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/backups.js"><link rel="modulepreload" href="lsdj/cartridges.js"><link rel="modulepreload" href="lsdj/carts-ui.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
 <link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
 <link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
@@ -1164,6 +1164,12 @@ canvas{border:1px solid var(--line);border-radius:6px;image-rendering:pixelated;
 .sets{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
 .sets select{max-width:100%}
 .sets-lib{margin:4px 0 8px;padding-left:20px}
+.cart-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px}
+.cart-card{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.cart-card.on{border-color:var(--accent,currentColor)}
+.cart-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cart-kits summary{cursor:pointer}
+#rom-cart,#st-cart{max-width:100%}
 .sets-plan{display:block;margin:4px 0}
 .sets-card{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}
 .sets-card h4{margin:2px 0 6px}
@@ -1205,7 +1211,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <header class="top"><div class="top-in">
 <a class="brand" href="#home">LSDJ Burrito<small>by Dreamy_bacon</small></a>
 <nav class="page-nav" aria-label="Main">
-<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#songtools" data-view="songs">Songs &amp; kits</a><a href="#emulator-sec" data-view="try">Try it</a>
+<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#carts" data-view="carts">Cartridges</a><a href="#songtools" data-view="songs">Songs &amp; kits</a><a href="#emulator-sec" data-view="try">Try it</a>
 </nav>
 <button id="install-app" class="chip install-chip" type="button" title="Install LSDJ Burrito as an app: it opens in its own window and works offline" hidden>Install app</button>
 <a id="conn-chip" class="chip" href="#connect">Not connected</a>
@@ -1554,6 +1560,14 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <section id="songtools-sec">
 <h2>Songs &amp; kits</h2>
 <div id="songtools"></div>
+</section>
+</div>
+
+<!-- ============ CARTRIDGES ============ -->
+<div class="view" data-view="carts" hidden>
+<section id="carts-sec">
+<h2>Cartridges</h2>
+<div id="carts"></div>
 </section>
 </div>
 

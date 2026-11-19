@@ -12,6 +12,7 @@ import {zipStore} from './zip.js';
 import {songsState, openSave, sendOpenSave, sendAfterInstall, playButton} from './songs-ui.js';
 import {buildSlot, checkRomFile} from './lsdj-rom.js';
 import {addToCrate} from './crate-ui.js';
+import {addCartridge} from './cartridges.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const hex = n => n.toString(16).toUpperCase().padStart(2, '0');
@@ -65,16 +66,17 @@ async function addFiles(files) {
     } else {
       try { checkRomFile(bytes, f.name); } catch (e) { throw new SavError(e.message); }
       if (!kitSlots(bytes).length) throw new SavError(`${f.name}: this LSDj has no kit slots, so sets can't put kits in it.`);
-      await addToLibrary('rom', f.name, bytes);
+      await addCartridge(bytes, f.name, {from: 'file'});
     }
     added.push(f.name);
   }
   return added;
 }
-/* a ROM chosen anywhere on the page joins the library (not the sets the page built) */
-export async function rememberRom(rom, name) {
+/* a ROM chosen in Songs and kits joins the cartridges (not the sets the page built). Install keeps its own
+   (lsdj-app.js: with its kit ticks and the cartridge an edit came from) */
+export async function rememberRom(rom, name, from = 'file') {
   if (state.built.has(await hashOf(rom))) return;
-  await addToLibrary('rom', name, rom);
+  await addCartridge(rom, name, {from});
 }
 
 /* ---- plans ---- */
@@ -151,8 +153,11 @@ function drawLibrary(box) {
     el('button', {type: 'button', textContent: 'Forget', onclick: () => guard(async () => { await removeFromLibrary(k.id); })}),
     listen([{bank: k.bank, name: k.name}])));
   box.append(el('h4', {textContent: 'Your LSDj files and kits'}),
-    el('p', {className: 'hint', textContent: 'Kept in this browser on this computer only, so you don\'t have to pick them again. Every LSDj chosen on this page is added. Add the LSDj each song was made with.'}),
-    state.roms.length || state.kitFiles.length ? list : el('p', {className: 'warn', textContent: 'None yet: add your LSDj .gb files (and any .kit files).'}));
+    el('p', {className: 'hint'}, 'Sets look for the kits your songs play in your cartridges: ',
+      el('b', {textContent: `${plural(state.roms.length, 'LSDj')}, ${plural(state.kitFiles.length, '.kit file')}`}),
+      '. Add the LSDj each song was made with. ', el('a', {href: '#carts', textContent: 'See and manage them in Cartridges'}), '.'),
+    state.roms.length || state.kitFiles.length ? el('details', {}, el('summary', {textContent: 'List them here'}), list)
+      : el('p', {className: 'warn', textContent: 'None yet: add your LSDj .gb files (and any .kit files).'}));
   if (state.roms.length) {
     const base = el('select', {onchange: () => { state.baseId = base.value; draw(); }},
       ...state.roms.map(r => el('option', {value: r.id, textContent: `${r.name} (LSDj ${S.versionText(S.lsdjVersion(r.rom))})`, selected: r.id === state.baseId})));
@@ -293,7 +298,6 @@ export function mountSetsUi(box) {
     el('p', {id: 'sets-status', className: 'hint', role: 'status'}),
     el('div', {id: 'sets-body'}));
   document.addEventListener('kit-library', () => guard(refresh));
-  document.addEventListener('install-rom', e => { if (e.detail?.rom) guard(() => rememberRom(e.detail.rom, e.detail.name)); });
   fetch('lsdj/template.json').then(r => r.json()).then(m => { if (Number.isInteger(m?.cartridge_capacity)) { state.capacity = m.cartridge_capacity; draw(); } }).catch(() => {});
   guard(refresh);
 }

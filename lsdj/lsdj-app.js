@@ -6,14 +6,21 @@ import {kitButtons, emptySlotTools} from './kits-ui.js';
 import {usageByBank, currentUsage, kitLabel} from './songs-ui.js';
 import {kitSlots, putKit} from './lsdj-kit.js';
 import {romFit} from './lsdj-usage.js';
+import {cartridges, cartName, addCartridge, saveKitChoice, installCart, rememberInstallCart} from './cartridges.js';
+import {cartPicker, mountCarts} from './carts-ui.js';
 
 const $ = id => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 const say = (text, cls = '') => { $('rom-info').textContent = text; $('rom-info').className = cls; };
 let rom = null, template = null, metadata = null, versions = [], generation = 0, busy = false;
 let loading = false, currentPlan = null;
 let downloadUrl = null;
 let reading = null, fromDevice = false;
 let romName = '', romInfo = null, romChanged = false, romUrl = null;
+/* the cartridge (cartridges.js) Install's LSDj is: its kit ticks are kept with it, and Install opens it again next
+   time. null: not kept (a set made in Sets) */
+let cartId = null;
+const saveTicks = () => { if (cartId && rom) void saveKitChoice(cartId, selected()); };
 const selected = () => [...$('rom-kits').querySelectorAll('input:checked')].map(el => Number(el.value));
 
 function clearDownload() {
@@ -62,6 +69,13 @@ function replaceRom(next, message) {
   rom = next; romChanged = true;
   renderKits(b => ticked.has(b) || !had.has(b));
   updatePlan(); announceRom();
+  /* kept as a cartridge of its own, linked to the one it came from (Cartridges cleans up the in-between copies) */
+  const parent = cartId, base = romName.replace(/(\.gbc?)?$/i, '').replace(/ · kits changed .*$/, '');
+  const when = new Date().toLocaleString([], {dateStyle: 'short', timeStyle: 'short'});
+  addCartridge(next, `${base} · kits changed ${when}.gb`, {from: 'edited', parent}).then(c => {
+    if (rom !== next) return;
+    cartId = c.id; romName = c.name; rememberInstallCart(c.id); saveTicks();
+  }).catch(e => say(`${message} It couldn't be kept in Cartridges (${e.message}): download it below to keep it.`, 'warn'));
   say(message + ' Changed in this page only: your ROM file is untouched. Download it below to keep it.', 'ok');
 }
 function renderKits(ticked = () => true) {
@@ -100,7 +114,7 @@ function renderKits(ticked = () => true) {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = 'Tick only the kits my songs play';
     b.title = 'From the songs open in Songs and kits ("maybe" ones stay ticked)';
-    b.onclick = () => { for (const i of $('rom-kits').querySelectorAll('input[type=checkbox]')) { const x = usage.get(Number(i.value)); i.checked = !!(x && (x.used.length || x.maybe.length)); } updatePlan(); };
+    b.onclick = () => { for (const i of $('rom-kits').querySelectorAll('input[type=checkbox]')) { const x = usage.get(Number(i.value)); i.checked = !!(x && (x.used.length || x.maybe.length)); } updatePlan(); saveTicks(); };
     $('rom-kits').append(b);
   }
   if (romChanged) {
@@ -114,11 +128,12 @@ function renderKits(ticked = () => true) {
 }
 /* Songs and kits opened other songs: say again which kits they play (ticks kept) */
 document.addEventListener('songs-usage', () => { if (rom && !loading) { const t = new Set(selected()); renderKits(b => t.has(b)); } });
-$('rom-kits').onchange = updatePlan;
+$('rom-kits').onchange = () => { updatePlan(); saveTicks(); };
 function updateControls() {
   const blocked = busy || installing() || !!reading;
   $('rom').disabled = blocked;
   $('rom-device').disabled = blocked;
+  if ($('rom-cart')) $('rom-cart').disabled = blocked || !$('rom-cart').options.length || $('rom-cart').options.length < 2;
   $('rom-cancel').hidden = !reading;
   $('rom-experimental').disabled = blocked || loading || !currentPlan;
   $('rom-kits').disabled = blocked || loading || !currentPlan;
@@ -139,9 +154,10 @@ function updateControls() {
     prepared: !!downloadUrl, working: busy || loading || !!reading}}));
 }
 document.addEventListener('firmware-install-state', updateControls);
-async function chooseRom(file, device = false) {
+/* cart: a cartridge chosen (its entry: ticks from it); keep: false for an LSDj not to keep (a set made in Sets) */
+async function chooseRom(file, device = false, {cart = null, keep = true} = {}) {
   const seq = ++generation;
-  fromDevice = device;
+  fromDevice = device; cartId = null;
   rom = template = metadata = null; romChanged = false; romInfo = null;
   loading = !!file;
   const legend = document.createElement('legend');
@@ -169,16 +185,24 @@ async function chooseRom(file, device = false) {
     if (device && reading.signal.aborted) throw Error('Cartridge read cancelled.');
     const kits = listKits(bytes);
     planRom(bytes, kits.map(k => k.bank), loaded.metadata.cartridge_capacity);
-    rom = bytes; versions = catalog; ({template, metadata} = loaded); romName = file.name; romInfo = info;
-    say(`${file.name} (${info.title}): ${info.tested ? 'a tested LSDj build' :
+    let c = cart;
+    if (!c && keep) c = await addCartridge(bytes, device ? `LSDj read from the FM-1 ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb` : file.name,
+      {from: device ? 'fm1' : 'file'}).catch(() => null);
+    if (seq !== generation) return;
+    if (c) { cartId = c.id; rememberInstallCart(c.id); }
+    const saved = c?.kits ? new Set(c.kits) : null;
+    rom = bytes; versions = catalog; ({template, metadata} = loaded); romName = c ? cartName(c) : file.name; romInfo = info;
+    say(`${romName} (${info.title}): ${info.tested ? 'a tested LSDj build' :
       info.sameProgram ? 'a tested LSDj program with different samples' : 'an untested LSDj build'}. ` +
       (info.cursorProfile === 1 ? 'LSDj 9.3.9 program (custom palettes and kits are fine): effects follow the cursor; SEQ, tempo, cues and MIDI sync work. ' :
         info.cursorProfile === 2 ? `Known ${info.title} program: effects follow the cursor and the LFO follows the tempo; SEQ live mode, tempo editing, cues and MIDI sync need LSDj 9.3.9. ` :
         'Cursor-following FX unavailable for this program: FX targets ALL channels. ') +
       (device ? 'All installed kits are ticked; untick any you can do without. ' : '') +
-      (!info.globalChecksumValid ? 'Its checksum is out of date; the firmware gets a corrected one. ' : ''),
-      info.cursorProfile ? 'ok' : 'warn');
-    renderKits();
+      (!info.globalChecksumValid ? 'Its checksum is out of date; the firmware gets a corrected one. ' : '') +
+      (saved ? 'The kits ticked are the ones you chose last time. ' : '') +
+      (!info.tested && !info.sameProgram ? "The FM-1 hasn't been tried with this LSDj: it may not start or sound right. " : ''),
+      info.cursorProfile && (info.tested || info.sameProgram) ? 'ok' : 'warn');
+    renderKits(saved ? b => saved.has(b) : undefined);
     updatePlan(); announceRom();
   } catch (err) {
     if (seq === generation) {
@@ -200,8 +224,33 @@ document.addEventListener('install-this-rom', e => {
   if (busy || installing() || reading) return;
   $('rom').value = '';
   location.hash = '#install';
-  chooseRom(new File([e.detail.rom], e.detail.name));
+  chooseRom(new File([e.detail.rom], e.detail.name), false, {keep: false});
 });
+/* Cartridges › Install… (carts-ui.js), or Install's own picker: that cartridge, its kits as chosen last time */
+async function chooseCart(c) {
+  if (busy || installing() || reading) return say('Busy: try again when the current job has finished.', 'bad');
+  $('rom').value = '';
+  await chooseRom(new File([c.bytes], c.name), false, {cart: c});
+}
+document.addEventListener('install-this-cart', async e => {
+  const c = (await cartridges()).find(x => x.id === e.detail.id);
+  if (c) await chooseCart(c); else say('That cartridge is no longer kept in this browser.', 'bad');
+});
+/* Install opened with no LSDj chosen: the cartridge it used last */
+const INSTALL_VIEW = ['#install', '#rom-step', '#install-sec'];
+async function reopen() {
+  if (rom || loading || busy || reading || installing() || !INSTALL_VIEW.includes(location.hash)) return;
+  const id = installCart(), c = id && (await cartridges()).find(x => x.id === id);
+  if (c && !rom && !loading) await chooseCart(c);
+}
+window.addEventListener('hashchange', () => void reopen());
+{
+  const pick = cartPicker({id: 'rom-cart', label: 'From my cartridges', onPick: chooseCart});
+  $('rom-step').querySelector('.actions').prepend(el('div', {className: 'action'}, el('p', {}, el('b', {textContent: 'Use one of my cartridges'})),
+    el('p', {className: 'hint', textContent: 'An LSDj you used before, kept in this browser (Cartridges), with the kits you chose for it.'}), pick));
+  mountCarts($('carts'));
+  void reopen();
+}
 /* Songs & kits › Your LSDj files and kits › Load (sets-ui.js): a saved .kit into the first empty kit slot of the
    LSDj chosen here (a new copy, as Add a .kit does) */
 document.addEventListener('install-this-kit', e => {

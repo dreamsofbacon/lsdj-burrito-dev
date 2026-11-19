@@ -6,7 +6,7 @@ import {getFirmwareSelection} from './install-ui.js';
 const $ = id => document.getElementById(id);
 const TABS = ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'];
 const VIEW_OF = {home: 'home', connect: 'device', install: 'install', 'rom-step': 'install', 'install-sec': 'install', 'emulator-sec': 'try',
-  songtools: 'songs', 'songtools-sec': 'songs'};
+  songtools: 'songs', 'songtools-sec': 'songs', carts: 'carts', 'carts-sec': 'carts'};
 TABS.forEach(t => { VIEW_OF[t] = 'device'; });
 
 let connected = false, tab = 'live-sec', step = 1, rom = {ready: false, fits: false, prepared: false};

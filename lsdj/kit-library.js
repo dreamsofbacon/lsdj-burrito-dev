@@ -76,6 +76,19 @@ export async function addToLibrary(kind, name, bytes, meta = {}) {
   announce();
   return entry;
 }
+/* changes a kept file's own fields (a cartridge's name, its saved kit choice): never its bytes, id or kind ->
+   the entry, or null if it isn't kept */
+export async function updateLibrary(id, patch) {
+  await open();
+  const old = memory.get(id);
+  if (!old) return null;
+  const {id: _i, kind: _k, bytes: _b, added: _a, ...fields} = patch;
+  const entry = {...old, ...fields};
+  memory.set(id, entry);
+  if (db) await kept(tx('readwrite', s => s.put(entry)), entry.label || entry.name);
+  announce();
+  return entry;
+}
 export async function removeFromLibrary(id) {
   await open();
   memory.delete(id);

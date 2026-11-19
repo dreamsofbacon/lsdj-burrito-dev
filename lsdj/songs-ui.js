@@ -14,6 +14,8 @@ import {mountSetsUi, rememberRom} from './sets-ui.js';
 import {addToCrate} from './crate-ui.js';
 import {backups, KEEP} from './backups.js';
 import {storageState} from './kit-library.js';
+import {cartridges, cartName} from './cartridges.js';
+import {cartPicker} from './carts-ui.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
@@ -280,6 +282,8 @@ async function sendPending() {
   say(done ? `Done: ${needs.title}'s LSDj and songs are on the FM-1.` : `Installed, but sending the songs failed (${why}). Press "2. Send ${needs.title}'s songs" to try again.`, done ? 'ok' : 'bad');
 }
 /* chosen: picked here (a file or the FM-1's), which a ROM chosen later in Install doesn't replace */
+/* a cartridge (Cartridges, or the picker here) for the kit names */
+function useCart(c) { useRom(c.bytes, cartName(c)); say(`Kit names from ${cartName(c)}.`, 'ok'); }
 export function useRom(rom, from, chosen = true) {
   state.rom = rom ?? null; state.slots = rom ? kitSlots(rom) : null; state.romFrom = from; state.romChosen = chosen;
   announce();
@@ -362,7 +366,8 @@ export function mountSongsUi(root) {
         {id: 'st-crate', disabled: true, title: 'Keep these songs in the DJ crate, to load onto a deck while the other plays'})),
     el('div', {className: 'row'},
       b('Choose your LSDj (.gb)…', () => romIn.click(), {title: 'Pick one, or several: the one that fits these songs best is used'}), romIn,
-      b('Read LSDj from the FM-1', async () => { say('Reading the installed LSDj from the FM-1 (no writes)…'); const rom = await withProgress(hooks.readRom); useRom(rom, 'the LSDj on the FM-1'); await rememberRom(rom, 'LSDj read from the FM-1'); say('Kit names read from the FM-1.', 'ok'); })),
+      b('Read LSDj from the FM-1', async () => { say('Reading the installed LSDj from the FM-1 (no writes)…'); const rom = await withProgress(hooks.readRom); useRom(rom, 'the LSDj on the FM-1'); await rememberRom(rom, `LSDj read from the FM-1 ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb`, 'fm1'); say('Kit names read from the FM-1.', 'ok'); }),
+      cartPicker({id: 'st-cart', label: 'From my cartridges', onPick: useCart})),
     el('p', {id: 'st-rom', className: 'hint'}),
     el('progress', {id: 'st-progress', value: 0, max: 1, hidden: true}),
     el('p', {id: 'st-status', className: 'hint', role: 'status'}),
@@ -376,6 +381,11 @@ export function mountSongsUi(root) {
   document.addEventListener('kit-library-trouble', () => void drawStorage());
   mountSetsUi($('st-sets'));
   document.addEventListener('firmware-installed', () => guard(sendPending));
+  document.addEventListener('songs-this-cart', e => guard(async () => {
+    const c = (await cartridges()).find(x => x.id === e.detail.id);
+    if (!c) throw new SavError('That cartridge is no longer kept in this browser.');
+    useCart(c);
+  }));
   document.addEventListener('install-rom', e => { if (e.detail?.rom && !state.romChosen) useRom(e.detail.rom, `the LSDj chosen in Install (${e.detail.name})`, false); });
   draw();
 }
