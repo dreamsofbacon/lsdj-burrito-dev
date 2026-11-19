@@ -28,6 +28,7 @@ import {popOut, bringBack, isOut} from './popout.js';
 import {pageColours} from './page-theme.js';
 import {mountCrate, setCrateHooks, dropOnDeck, crateRedraw, CRATE_TYPE} from './crate-ui.js';
 import {timeLeft} from './crate.js';
+import {FULL_LSDJ} from './lsdj-rom.js';
 import {savHeader, HEADER, HEADER_SIZE, BLOCK_COUNT} from './lsdj-sav.js';
 import {readOffsets as keyReads, songKeys} from './song-key.js';
 import {logEvent, logText, clearLog} from './conn-log.js';
@@ -713,7 +714,7 @@ async function deckHold(d) {
   if (!l) return;
   const on = !d.live?.live;
   try {
-    if (!(await l.seqSet(on))) return say(`Deck ${NAMES[d.i]}: this FM-1 can't switch LSDj's live mode (it needs LSDj 9.3.9).`);
+    if (!(await l.seqSet(on))) return say(`Deck ${NAMES[d.i]}: this FM-1 can't switch LSDj's live mode (it needs ${FULL_LSDJ}).`);
     if (d.live) d.live.live = on;
     say(`Deck ${NAMES[d.i]}: ${on ? 'looping: each channel repeats the chain it plays (LSDj live mode) until you cue another' : 'the song plays on again (song mode)'}.`);
   } catch (e) { say(`Deck ${NAMES[d.i]}: ${e.message}`); }

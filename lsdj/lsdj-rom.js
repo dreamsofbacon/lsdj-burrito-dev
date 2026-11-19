@@ -20,8 +20,10 @@ const title = rom => String.fromCharCode(...rom.subarray(0x134, 0x143)).replace(
 const isKit = bank => bank[0] === 0x60 && bank[1] === 0x40;
 // Only erased banks can be omitted without changing what the emulator reads.
 const isEmpty = bank => bank.every(b => b === 0xff);
-// The LSDj programs the FM-1 knows (src/lsdj_slot.h byte 148). Profile 1: the verified LSDj 9.3.9 program,
-// every helper (cursor FX, SEQ, tempo, cues, MIDI sync). Profile 2: another LSDj whose cursor and tempo bytes
+// The LSDj programs the FM-1 knows (src/lsdj_slot.h byte 148). Profile 1: a program with LSDj 9.3.9's addresses,
+// every helper (cursor FX, SEQ, tempo, cues, MIDI sync): 9.3.9, and 9.4.0 / 9.4.2 (0.9.98-dev.18: the same WRAM and
+// song addresses; checked on the actual firmware in the emulator: SEQ, the DJ link, auto SYNC, DJ keys, note mode,
+// cursor FX, Next chain, the start row). Profile 2: another LSDj whose cursor and tempo bytes
 // were found (harness/find_cursor.c, find_tempo.c): cursor-following FX and the LFO tempo only.
 // A program is its code banks (0-7, 1B-1F) with its palette colours (bank 1) and palette names (bank 1B)
 // blanked, so custom palettes and kit banks (including blank kit slots) keep the match.
@@ -29,8 +31,10 @@ const CODE_BANKS = [0, 1, 2, 3, 4, 5, 6, 7, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f];
 export const LSDJ_PROFILES = [
   {title: 'LSDj-v9.3.9', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
    codeHash: '56d3a06fa6a35013c4647fa01e547a2a1869f9e3eccea0f1cdda8a1ee029e4f9'},
-  {title: 'LSDj-v9.4.0', profile: 2, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+  {title: 'LSDj-v9.4.0', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
    codeHash: 'ae3214b29f70b8c21352a1281ff591cbe61e2ec8f1ec6f300314979c1c7ffb5c'},
+  {title: 'LSDj-v9.4.2', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: '7a7117377fffade614ec14f5abd0299c1f20f26b1cda2bb6d7dc6deb68a0df8e'},
   {title: 'LSDj-v9.2.L', profile: 2, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
    codeHash: '0f49d6ca387321749f44b2bd07a103eb58aad788f1e0c46971302d825e6fc1da'},
   {title: 'LSDj-v9.1.Caboy', profile: 2, cursor: 0xC464, tempo: 0xC575, mask: [[0x1, 0x16d7, 0x17f0], [0x1b, 0x16f0, 0x1748]],
@@ -42,6 +46,9 @@ export const LSDJ_PROFILES = [
   {title: 'LSDj-v4.6.2', profile: 2, cursor: 0xC0E8, tempo: 0xC4AF, mask: [],
    codeHash: '21b2ba9460d5faf7174a554889b904d7703df4667613ebc6be1c7379b7164b09'}
 ];
+/* the LSDj versions the FM-1 knows fully (profile 1), for messages: "LSDj 9.3.9, 9.4.0 or 9.4.2" */
+const FULL = LSDJ_PROFILES.filter(p => p.profile === 1).map(p => p.title.replace(/^LSDj-v/, ''));
+export const FULL_LSDJ = 'LSDj ' + (FULL.length > 1 ? FULL.slice(0, -1).join(', ') + ' or ' + FULL.at(-1) : FULL[0]);
 export async function codeHash(rom, mask) {
   if (rom.length < 0x20 * BANK) return null;
   const bytes = new Uint8Array(CODE_BANKS.length * (BANK + 1));

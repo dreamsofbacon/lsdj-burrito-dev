@@ -6,6 +6,7 @@
 // onto a deck. The work runs in a worker (cart-worker.js), so the decks keep time. Copies only, kept in this browser.
 import {libraryFiles, addToLibrary, hashOf} from './kit-library.js';
 import {labelEditor, paintLabel, shrinkImage} from './cart-label.js';
+import {FULL_LSDJ} from './lsdj-rom.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const btn = (text, onclick, props = {}) => el('button', {type: 'button', textContent: text, onclick, ...props});
@@ -156,8 +157,8 @@ function drawBuild(box) {
     el('p', {className: 'hint', textContent: 'Its program runs the carts. Its kits go in only when a song plays them.'}),
     /* not the LSDj the FM-1 knows fully: the DJ layout loses SYNC, play state and rows on carts made with it */
     v.roms.find(r => r.id === v.baseId)?.full === false ? el('p', {className: 'warn cm-notfull', textContent: v.roms.some(r => r.full)
-      ? 'The FM-1 knows LSDj 9.3.9 fully, not this one: carts made with it play, but the DJ layout cannot read their SYNC, what plays or the song rows, and MIDI sync and cues are off. Choose the LSDj 9.3.9 above for those.'
-      : 'The FM-1 knows LSDj 9.3.9 fully, not this one: carts made with it play, but the DJ layout cannot read their SYNC, what plays or the song rows, and MIDI sync and cues are off. Add LSDj 9.3.9 to build with it.'}) : null,
+      ? `The FM-1 knows ${FULL_LSDJ} fully, not this one: carts made with it play, but the DJ layout cannot read their SYNC, what plays or the song rows, and MIDI sync and cues are off. Choose one of those above for them.`
+      : `The FM-1 knows ${FULL_LSDJ} fully, not this one: carts made with it play, but the DJ layout cannot read their SYNC, what plays or the song rows, and MIDI sync and cues are off. Add one of those to build with it.`}) : null,
     el('div', {className: 'cm-plans'}, plan('split', 'Every sample (as many carts as it takes)'), plan('most', 'One cart (the kits most songs play)')),
     el('label', {className: 'cm-field'}, 'Name ', name));
   if (!v.plans.length) { box.append(el('p', {className: 'hint', textContent: 'Tick some songs.'})); return; }

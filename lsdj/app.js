@@ -19,7 +19,7 @@ import {zipStore} from './zip.js';
 import {startClock, startRelay, clampBpm} from './midiclock.js';
 import {mountDj, setDjHooks, djShown, djDevicesChanged, rememberSav, djLive, djHearChanged} from './dj-ui.js';
 import {Hear} from './usb-audio.js';
-import {romFromSlot} from './lsdj-rom.js';
+import {romFromSlot, FULL_LSDJ} from './lsdj-rom.js';
 import {ScreenMirror} from './screen.js';
 import {initPresets, presetsShown, readPresetList} from './presets-ui.js';
 import {popOut, onPopChange, isOut, docs, seen, anyVisible, visibleWindow} from './popout.js';
@@ -86,7 +86,7 @@ async function connectOnce(input, output, how, fast) {
     fwId = info.firmware; fwNum = firmwareNumber(info.firmware); hasPresets = info.presets; fx98 = !!info.fx98; hasUsbVol = !!info.usbVol;
     muteOk = fwNum >= 977;   // MUTE_SET: FM-1_977 and newer
     say('device', (virtual ? `Connected to the virtual FM-1 (the emulator on this page, not a device): ` : `Connected over ${how}: `) +
-      `${info.firmware} running ${info.title || 'a game'}` + (info.liveKnown ? '' : ' (live data needs LSDj 9.3.9)'), 'ok');
+      `${info.firmware} running ${info.title || 'a game'}` + (info.liveKnown ? '' : ` (live data needs ${FULL_LSDJ})`), 'ok');
     $('stage-dev').textContent = virtual ? `· virtual FM-1 (${info.firmware})` : `· ${info.firmware} over ${how}`;
     const dev = virtual ? null : devices.find(d => d.input === input && d.output === output) || {input, output, name: output.name, info};
     /* an FM-1 switched back to: what the page knew of it shows at once (each request takes ~50 ms); the live poll

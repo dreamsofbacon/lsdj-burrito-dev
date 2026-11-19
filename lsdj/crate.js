@@ -113,7 +113,7 @@ export function describe(item, bytesOf) {
 
 /* an LSDj's song format from its title, when only the title is known (an FM-1's INFO): from an LSDj file of that title,
    else the ones measured (lsdj-sets.js songFormat) */
-const KNOWN_FORMATS = {'LSDj-v9.3.9': 22, 'LSDj-v5.7.8': 4};
+const KNOWN_FORMATS = {'LSDj-v9.3.9': 22, 'LSDj-v9.4.0': 22, 'LSDj-v9.4.2': 22, 'LSDj-v5.7.8': 4};   /* (9.4.x: format 22, lsdj-sets.js lsdjFormat) */
 const titleText = t => String(t || '').replace(/[\u0000 ]+$/, '');
 export function formatOfTitle(title, roms = []) {
   const t = titleText(title);
