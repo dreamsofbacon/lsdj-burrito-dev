@@ -8,7 +8,9 @@ import {pack7, unpack7, HS_QUERY, STAGE_DONE, WRITE_DONE} from '../vendor/fm1ota
 
 const PRODUCT = 'FM-1_537000998';
 let nextId = 1;
-const access = {inputs: new Map(), outputs: new Map()};
+const access = {inputs: new Map(), outputs: new Map(), heard: new Set(),   /* (statechange, as Chrome's MIDIAccess) */
+  addEventListener(t, f) { this.heard.add(f); }, removeEventListener(t, f) { this.heard.delete(f); }};
+const changed = port => access.heard.forEach(f => f({port}));
 
 function identity(text) {
   const d = [0, 0x59, 0x11, 0, 0, 0, ...[...text.padEnd(27, '\0')].map(c => c.charCodeAt(0)), 0];
@@ -27,17 +29,20 @@ function fm1(name, text) {
   const dev = {name, text, mode: text.startsWith('ota') ? 'ota' : 'app', got: [], ports: null, upgraded: false,
     back: {ota: 300, app: 300}};   /* ms until it is on USB again after a restart (Infinity: until replugged) */
   dev.plug = () => {
-    const input = {id: `in${nextId}`, name: dev.name, state: 'connected', listeners: new Set(), onmidimessage: null,
+    const [inId, outId] = dev.reuse?.shift() || [`in${nextId}`, `out${nextId++}`];
+    const input = {id: inId, name: dev.name, state: 'connected', listeners: new Set(), onmidimessage: null,
       open: async () => {}, addEventListener(t, f) { this.listeners.add(f); }, removeEventListener(t, f) { this.listeners.delete(f); }};
-    const output = {id: `out${nextId++}`, name: dev.name, state: 'connected', open: async () => {}, send: m => { dev.got.push(m); dev.hear(m); }};
+    const output = {id: outId, name: dev.name, state: 'connected', open: async () => {}, send: m => { dev.got.push(m); dev.hear(m); }};
     const emit = data => later(() => { if (input.state !== 'connected') return; const ev = {data}; input.listeners.forEach(f => f(ev)); input.onmidimessage?.(ev); });
     dev.ports = {input, output, emit};
     access.inputs.set(input.id, input); access.outputs.set(output.id, output);
+    changed(input); changed(output);
   };
   dev.unplug = () => {
     if (!dev.ports) return;
     for (const p of [dev.ports.input, dev.ports.output]) p.state = 'disconnected';
     access.inputs.delete(dev.ports.input.id); access.outputs.delete(dev.ports.output.id);
+    changed(dev.ports.input); changed(dev.ports.output);
     dev.ports = null;
   };
   dev.hear = m => {
@@ -133,6 +138,30 @@ const avoidOf = (...ds) => ds.flatMap(d => [d.ports.input.id, d.ports.output.id]
   const a = fm1('FM-1', 'FM-1_996'), b = fm1('FM-1', 'FM-1_996');
   const r = await installOn(access, pkg, {target: ids(a), avoid: avoidOf(b), onStep: s => { if (s === 'write') b.unplug(); }});
   assert.deepEqual(r, {id: PRODUCT, confirmed: false});
+  assert.deepEqual(b.got, []);
+}
+/* Windows numbers ports by when they came: the restarted FM-1 takes a number the DJ layout kept out from another day
+   (its mixer, gone now). It is still found after its restart, with nothing sent to the FM-1 playing */
+{
+  reset();
+  const a = fm1('FM-1', 'FM-1_996'), b = fm1('FM-1', 'FM-1_996');
+  a.reuse = [['in-old', 'out-old'], ['in-old', 'out-old']];
+  const steps = [];
+  const r = await installOn(access, pkg, {target: ids(a), avoid: [...avoidOf(b), 'in-old', 'out-old'], onStep: s => steps.push(s), waitMs: 3000});
+  assert.deepEqual(r, {id: PRODUCT, confirmed: true});
+  assert.equal(a.upgraded, true);
+  assert.deepEqual(b.got, []);
+  assert.ok(!steps.some(s => s.startsWith('replug')), steps.join());
+}
+/* the other FM-1 unplugged during the install and deck A's FM-1 back on its number: found, not confirmed */
+{
+  reset();
+  const a = fm1('FM-1', 'FM-1_996'), b = fm1('FM-1', 'FM-1_996'), bIds = avoidOf(b);
+  a.reuse = [[`in${nextId}`, `out${nextId}`], [bIds[0], bIds[1]]];
+  nextId++;
+  const r = await installOn(access, pkg, {target: ids(a), avoid: bIds, waitMs: 3000, onStep: s => { if (s === 'write') b.unplug(); }});
+  assert.deepEqual(r, {id: PRODUCT, confirmed: false});
+  assert.equal(a.upgraded, true);
   assert.deepEqual(b.got, []);
 }
 /* slow to come back on USB after each restart (Windows missed it; the cable replugged): the page says so once

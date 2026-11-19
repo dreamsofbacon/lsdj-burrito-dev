@@ -52,7 +52,7 @@ export function checkPackage(bytes) {
 
 /* MIDI access without some ports: a live view (ports that appear later, such as the FM-1 in update mode, show up) */
 export function accessWithout(access, avoid) {
-  const skip = new Set(avoid);
+  const skip = avoid instanceof Set ? avoid : new Set(avoid);   /* (a Set: live, the caller can take ports out of it) */
   const without = map => new Map([...map].filter(([id, p]) => !skip.has(id) && !skip.has(p?.id)));
   return {get inputs() { return without(access.inputs); }, get outputs() { return without(access.outputs); }};
 }
@@ -66,6 +66,17 @@ export async function installOn(access, pkg, {target, avoid = [], Transport = Up
   if (avoid.includes(target.input) || avoid.includes(target.output)) throw new InstallError('That FM-1 is in use elsewhere. Nothing was installed.');
   const present = id => { const p = access.inputs.get(id) || access.outputs.get(id); return !!p && p.state !== 'disconnected'; };
   const others = avoid.filter(present);
+  /* Only the ports there now are kept out, and only while they stay: Chrome on Windows numbers ports by when they
+     came (output-3), and a port that went away is taken again by the next device of that name. The restarted FM-1
+     came back on a kept-out number (the DJ mixer's from another day, a deck's FM-1 unplugged since) and the page
+     never looked at it, however often it was replugged (Colin, 2026-11-19: "unplug it and plug it back in, but
+     that didn't work"). After its restart the page only asks who answers (nothing is written), so a number that
+     went away is looked at again. */
+  const guard = new Set(others);
+  const recheck = () => { for (const id of guard) if (!present(id)) guard.delete(id); };
+  const onState = () => recheck();
+  try { access.addEventListener?.('statechange', onState); } catch { /* (no events: checked at each look) */ }
+  const view = accessWithout({get inputs() { recheck(); return access.inputs; }, get outputs() { recheck(); return access.outputs; }}, guard);
   let first = true;
   class Targeted extends Transport {
     async findAny(filter, opts) {
@@ -81,8 +92,10 @@ export async function installOn(access, pkg, {target, avoid = [], Transport = Up
       return dev;
     }
   }
-  const id = await install(accessWithout(access, avoid), pkg, {...options, Transport: Targeted});
-  return {id, confirmed: others.every(present)};
+  let id;
+  try { id = await install(view, pkg, {...options, Transport: Targeted}); }
+  finally { try { access.removeEventListener?.('statechange', onState); } catch { /* (none added) */ } }
+  return {id, confirmed: guard.size === others.length && others.every(present)};
 }
 
 /* The fast LSDj swap (0.9.98-dev.6, swap.js): the FM-1 already runs this package's firmware, so only its LSDj slot
