@@ -62,7 +62,7 @@ export async function runPresetsUiTests() {
     // 1. the row: 8 slots, DUB lit, empty ones dimmed
     await until(() => !$('preset-row').hidden && row().length === 8 && row()[0].classList.contains('on'), `the presets row: ${$('preset-slots').innerHTML}`);
     assert(/DUB/.test(row()[0].textContent) && row()[1].classList.contains('empty') && /LOFI/.test(row()[2].textContent), 'names and empty slots');
-    assert(/EDIT, press E4/.test(row()[2].title), `the FM-1's key in the title: ${row()[2].title}`);
+    assert(/EDIT, then E4/.test(row()[2].title), `the FM-1's key in the title: ${row()[2].title}`);
 
     // 2. a click loads it; what it brings is read again
     const reads0 = dev.settingsReads;
