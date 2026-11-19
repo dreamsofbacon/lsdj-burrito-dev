@@ -104,6 +104,8 @@ $('fw-install').onclick = async () => {
   if (unavailable) return say(unavailable + ' Nothing was installed.', 'warn');
   if (document.hidden) return say('Bring this tab to the front first.', 'warn');
   if (!pkg.burrito && !confirm(`${fileName} is ${pkg.product}, not an LSDJ Burrito build. Install it anyway?`)) return;
+  /* the LSDj the FM-1 has now: kept in Cartridges first if it isn't (its kits may exist nowhere else) */
+  if (!(await (await import('./carts-ui.js')).keepBeforeInstall(log))) return say('Nothing was installed: the copy of the FM-1\'s LSDj could not be read. Try again, or install without a copy.', 'bad');
   if (!confirm(`Install ${pkg.product} on the FM-1?\n\nBack up songs first. Keep stable power, the USB cable in and this tab open until it says done. An interrupted write can leave the device unable to boot; recovery is not guaranteed. Proceed?`)) return;
   busy = true; updateControls();
   document.dispatchEvent(new Event('firmware-install-state'));

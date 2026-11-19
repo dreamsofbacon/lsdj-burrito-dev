@@ -5,7 +5,7 @@
 // the crate and the cart maker all choose from these (the cartridge plan, phase 2). Older entries have none of
 // the new fields and read as files.
 import {libraryFiles, addToLibrary, updateLibrary, removeFromLibrary} from './kit-library.js';
-import {checkRomFile} from './lsdj-rom.js';
+import {checkRomFile, buildSlot, listKits} from './lsdj-rom.js';
 import {KEY as CRATE_KEY, loadItems} from './crate.js';
 
 const INSTALL = 'burrito-install-cart';
@@ -66,4 +66,38 @@ export async function forgetCartridge(id) {
   if (n) throw Error(`${n} DJ crate card${n === 1 ? ' plays' : 's play'} this LSDj: remove ${n === 1 ? 'it' : 'them'} from the crate first. Nothing was forgotten.`);
   if (installCart() === id) rememberInstallCart(null);
   await removeFromLibrary(id);
+}
+
+/* ---- which cartridge an FM-1 has (phase 3) ----
+   An FM-1 reports its LSDj as the CRC of its slot data (link.js cartridgeInfo: dataCrc): the LSDj with the kits
+   installed. Each cartridge keeps the CRCs it was prepared (Install) or read (from an FM-1) with: 'prints',
+   [{dataCrc, kits}], the newest last. */
+const PRINTS = 12;
+export async function notePrint(id, dataCrc, kits) {
+  const c = (await cartridges()).find(x => x.id === id);
+  if (!c || !Number.isInteger(dataCrc)) return null;
+  const prints = (c.prints || []).filter(p => p.dataCrc !== dataCrc).concat({dataCrc, kits: [...kits].sort((a, b) => a - b)}).slice(-PRINTS);
+  return updateLibrary(id, {prints});
+}
+/* the slot data CRC of an LSDj with these kits, as Install builds it (the slot's size doesn't change it) */
+export async function dataCrcOf(rom, kits) {
+  const {slot} = await buildSlot(rom, kits, 0x7fffffff);
+  return new DataView(slot.buffer, slot.byteOffset).getUint32(16, true) >>> 0;
+}
+/* the cartridge an FM-1 has (its dataCrc) -> {cart, kits} or null. A CRC kept with a cartridge first; else each
+   cartridge with the kits it's set to install, then with all its kits (installs from before cartridges kept CRCs),
+   and a match found that way is kept. */
+export async function matchCart(dataCrc, list = null) {
+  list ??= await cartridges();
+  dataCrc >>>= 0;
+  for (const c of list) { const p = (c.prints || []).find(x => x.dataCrc >>> 0 === dataCrc); if (p) return {cart: c, kits: p.kits}; }
+  for (const c of list) {
+    const all = listKits(c.bytes).map(k => k.bank);
+    for (const kits of c.kits && c.kits.join() !== all.join() ? [c.kits, all] : [all]) {
+      let crc = null;
+      try { crc = await dataCrcOf(c.bytes, kits); } catch { continue; }
+      if (crc === dataCrc) { await notePrint(c.id, dataCrc, kits); return {cart: c, kits}; }
+    }
+  }
+  return null;
 }

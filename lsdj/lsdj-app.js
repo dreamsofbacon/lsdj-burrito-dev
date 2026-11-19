@@ -6,7 +6,7 @@ import {kitButtons, emptySlotTools} from './kits-ui.js';
 import {usageByBank, currentUsage, kitLabel} from './songs-ui.js';
 import {kitSlots, putKit} from './lsdj-kit.js';
 import {romFit} from './lsdj-usage.js';
-import {cartridges, cartName, addCartridge, saveKitChoice, installCart, rememberInstallCart} from './cartridges.js';
+import {cartridges, cartName, addCartridge, saveKitChoice, installCart, rememberInstallCart, notePrint, dataCrcOf} from './cartridges.js';
 import {cartPicker, mountCarts} from './carts-ui.js';
 
 const $ = id => document.getElementById(id);
@@ -155,7 +155,7 @@ function updateControls() {
 }
 document.addEventListener('firmware-install-state', updateControls);
 /* cart: a cartridge chosen (its entry: ticks from it); keep: false for an LSDj not to keep (a set made in Sets) */
-async function chooseRom(file, device = false, {cart = null, keep = true} = {}) {
+async function chooseRom(file, device = false, {cart = null, keep = true, readCrc = null} = {}) {
   const seq = ++generation;
   fromDevice = device; cartId = null;
   rom = template = metadata = null; romChanged = false; romInfo = null;
@@ -190,6 +190,7 @@ async function chooseRom(file, device = false, {cart = null, keep = true} = {}) 
       {from: device ? 'fm1' : 'file'}).catch(() => null);
     if (seq !== generation) return;
     if (c) { cartId = c.id; rememberInstallCart(c.id); }
+    if (c && readCrc != null) void notePrint(c.id, readCrc(), listKits(bytes).map(k => k.bank));   /* (what that FM-1 has) */
     const saved = c?.kits ? new Set(c.kits) : null;
     rom = bytes; versions = catalog; ({template, metadata} = loaded); romName = c ? cartName(c) : file.name; romInfo = info;
     say(`${romName} (${info.title}): ${info.tested ? 'a tested LSDj build' :
@@ -271,6 +272,7 @@ $('rom-device').onclick = async () => {
   $('rom').value = '';
   setPreparingFirmware(true);
   try {
+    let crc = null;
     await chooseRom({name: 'Installed LSDj', size: 0, arrayBuffer: async () => {
       const {readInstalledCartridge} = await import('./app.js');
       const slot = await readInstalledCartridge((n, total) => {
@@ -278,8 +280,9 @@ $('rom-device').onclick = async () => {
         say(`Reading installed LSDj: ${n.toLocaleString()} / ${total.toLocaleString()} bytes. No device writes.`);
       }, signal);
       if (signal.aborted) throw Error('Cartridge read cancelled.');
+      crc = new DataView(slot.buffer, slot.byteOffset).getUint32(16, true) >>> 0;
       return romFromSlot(slot).buffer;
-    }}, true);
+    }}, true, {readCrc: () => crc});
   } finally {
     reading = null; progress.hidden = true;
     setPreparingFirmware(false); updateControls();
@@ -297,6 +300,9 @@ $('rom-build').onclick = async () => {
     if (seq !== generation) return;
     const name = `lsdj-burrito-${metadata?.release || result.product}-experimental.fwsc`;
     selectFirmware(result.bytes, name, true, result.slot, result.build);
+    /* what an FM-1 with this installed reports (Cartridges: which cartridge each FM-1 has) */
+    if (cartId) { const id = cartId; void (result.slot ? Promise.resolve(new DataView(result.slot.buffer, result.slot.byteOffset).getUint32(16, true) >>> 0)
+      : dataCrcOf(rom, keep)).then(crc => notePrint(id, crc, keep)).catch(() => {}); }
     downloadUrl = URL.createObjectURL(new Blob([result.bytes], {type: 'application/octet-stream'}));
     $('rom-download').href = downloadUrl; $('rom-download').download = name; $('rom-download').hidden = false;
     $('rom-actions').hidden = false;

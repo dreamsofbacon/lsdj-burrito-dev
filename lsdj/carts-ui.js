@@ -4,7 +4,7 @@
 // it in Songs and kits, rename, download, forget; the .kit files; clean up the copies kit edits leave. And the one
 // cartridge picker Install and Songs and kits use (cartPicker). The cartridge plan, phase 2.
 import {cartridges, cartName, originText, addCartridge, renameCartridge, installCart, crateUses, inBetweenCopies,
-  cleanUp, forgetCartridge} from './cartridges.js';
+  cleanUp, forgetCartridge, matchCart, notePrint} from './cartridges.js';
 import {libraryFiles, addToLibrary, removeFromLibrary, storageState} from './kit-library.js';
 import {identifyRom, listKits, checkRomFile} from './lsdj-rom.js';
 import {lsdjLabel} from './lsdj-sets.js';
@@ -14,7 +14,8 @@ const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.crea
 const btn = (text, fn, props = {}) => el('button', {type: 'button', textContent: text, onclick: () => guard(fn), ...props});
 const hex = n => n.toString(16).toUpperCase().padStart(2, '0');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-let root = null, catalog = null;
+let root = null, catalog = null, connected = false;
+let onFm1 = null;   /* {id, fm1}: the cartridge the FM-1 in use has, when last checked */
 const ids = new Map();   /* cartridge id -> identifyRom's answer (tested or not), worked out once */
 
 const say = (text, cls = 'hint') => { const s = root?.querySelector('#carts-status'); if (s) { s.textContent = text; s.className = cls; } };
@@ -42,6 +43,67 @@ export function cartPicker({id, label = 'From my cartridges', onPick}) {
   document.addEventListener('kit-library', () => void fill());
   void fill();
   return sel;
+}
+
+/* ---- the FM-1's cartridge (phase 3) ---- */
+/* reads the LSDj on the FM-1 in use and keeps it as a cartridge, with the CRC that FM-1 reports -> the entry */
+export async function readAndKeep(progress = () => {}) {
+  const [{readInstalledCartridge, installedCartInfo}, {romFromSlot}] = await Promise.all([import('./app.js'), import('./lsdj-rom.js')]);
+  const {fm1} = await installedCartInfo();
+  const slot = await readInstalledCartridge(progress);
+  const rom = romFromSlot(slot), crc = new DataView(slot.buffer, slot.byteOffset).getUint32(16, true) >>> 0;
+  const c = await addCartridge(rom, `LSDj read from ${fm1.replace(/^The /, 'the ')} ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb`, {from: 'fm1', fm1});
+  await notePrint(c.id, crc, listKits(rom).map(k => k.bank));
+  onFm1 = {id: c.id, fm1};
+  return c;
+}
+/* which cartridge the FM-1 in use has -> {fm1, cart, kits} (cart null: one not kept here). Throws if it can't tell */
+export async function fm1Cartridge() {
+  const {installedCartInfo} = await import('./app.js');
+  const info = await installedCartInfo();
+  const m = await matchCart(info.dataCrc);
+  onFm1 = m ? {id: m.cart.id, fm1: info.fm1} : null;
+  return {fm1: info.fm1, cart: m?.cart ?? null, kits: m?.kits ?? null};
+}
+/* before an install from Install (install-ui.js): an LSDj on the FM-1 that isn't kept here would be gone for good
+   with any kits only it has, so a copy is offered first. -> false: stop (nothing installed) */
+export async function keepBeforeInstall(log = () => {}) {
+  let r;
+  try { r = await fm1Cartridge(); }
+  catch (e) { log(`Couldn't tell which LSDj the FM-1 has (${e.message}): no copy of it was kept first.`); return true; }
+  if (r.cart) { log(`${r.fm1} has ${cartName(r.cart)}: it's kept in Cartridges.`); return true; }
+  if (!confirm(`${r.fm1} has an LSDj that isn't kept in this browser. Any kits only it has would be gone for good after this install.\n\n` +
+    'OK: keep a copy in Cartridges first (read from the FM-1; nothing is written to it).\nCancel: install without a copy.')) {
+    log(`${r.fm1}: installing without a copy of its LSDj (you chose to).`); return true;
+  }
+  try {
+    log(`Reading the LSDj on ${r.fm1} to keep a copy…`);
+    const c = await readAndKeep();
+    log(`Kept ${cartName(c)} in Cartridges.`);
+    return true;
+  } catch (e) {
+    log(`The copy couldn't be read (${e.message}). Nothing was installed.`);
+    return false;
+  }
+}
+async function drawFm1(check = false) {
+  const box = root?.querySelector('#carts-fm1');
+  if (!box) return;
+  const line = (text, cls, ...more) => box.replaceChildren(el('span', {className: cls, textContent: text}), ...more);
+  const checkBtn = btn('Check which LSDj the FM-1 has', () => drawFm1(true));
+  if (!check) return line(connected ? '' : 'Connect an FM-1 (My FM-1) to see which of these it has.', 'hint', checkBtn);
+  line('Asking the FM-1 which LSDj it has…', 'hint');
+  try {
+    const r = await fm1Cartridge();
+    if (r.cart) line(`${r.fm1} has ${cartName(r.cart)} (${plural(r.kits.length, 'kit')}).`, 'ok', ' ', checkBtn);
+    else line(`${r.fm1} has an LSDj that isn't kept here: kits only it has exist nowhere else in this browser. `, 'warn',
+      btn('Keep a copy (read it)', async () => {
+        line('Reading the LSDj on the FM-1 (nothing is written to it)…', 'hint');
+        const c = await readAndKeep((n, t) => line(`Reading the LSDj on the FM-1: ${Math.round(100 * n / t)} %. Nothing is written to it.`, 'hint'));
+        line(`Kept ${cartName(c)}. It's what ${r.fm1} has.`, 'ok', ' ', checkBtn);
+      }, {className: 'primary'}), ' ', checkBtn);
+  } catch (e) { line(`Couldn't tell: ${e.message}`, 'warn', ' ', checkBtn); }
+  void draw();
 }
 
 /* ---- the tab ---- */
@@ -92,6 +154,7 @@ function card(c, byId) {
   return el('li', {className: 'cart-card' + (mine ? ' on' : '')},
     el('div', {className: 'cart-head'}, el('b', {textContent: cartName(c)}),
       mine ? el('span', {className: 'badge', textContent: 'Install\'s'}) : null,
+      onFm1?.id === c.id ? el('span', {className: 'badge on', textContent: `on ${onFm1.fm1.replace(/^The /, 'the ')}`}) : null,
       crate ? el('span', {className: 'badge', textContent: `in the crate ×${crate}`}) : null),
     el('div', {className: 'hint'}, facts, status),
     kitList(c),
@@ -157,20 +220,21 @@ export function mountCarts(box) {
   input.onchange = () => { const x = [...input.files]; input.value = ''; if (x.length) guard(() => addFiles(x)); };
   const read = btn('Read the LSDj on my FM-1', async () => {
     say('Reading the LSDj installed on the FM-1 (nothing is written to it)…');
-    const [{readInstalledCartridge}, {romFromSlot}] = await Promise.all([import('./app.js'), import('./lsdj-rom.js')]);
-    const rom = romFromSlot(await readInstalledCartridge((n, t) => say(`Reading the LSDj on the FM-1: ${Math.round(100 * n / t)} %. Nothing is written to it.`)));
-    const c = await addCartridge(rom, `LSDj read ${new Date().toLocaleDateString([], {dateStyle: 'medium'})}.gb`, {from: 'fm1'});
+    const c = await readAndKeep((n, t) => say(`Reading the LSDj on the FM-1: ${Math.round(100 * n / t)} %. Nothing is written to it.`));
     say(`Kept ${cartName(c)}. Kits left out when it was installed aren't in it: only your original file has them.`, 'ok');
+    void draw();
   });
   box.replaceChildren(
     el('p', {className: 'hint', textContent: 'Your LSDj files, kept in this browser on this computer only (never uploaded). Install, Songs & kits, Sets and the DJ crate all choose from these. Each remembers which kits Install puts on the FM-1.'}),
     el('div', {className: 'row'}, btn('Add LSDj or .kit files…', () => input.click(), {className: 'primary'}), input, read),
+    el('p', {id: 'carts-fm1', className: 'row'}),
     el('p', {id: 'carts-status', className: 'hint', role: 'status'}),
     el('p', {id: 'carts-storage', className: 'warn', hidden: true}),
     el('div', {id: 'carts-list'}));
   document.addEventListener('kit-library', () => void draw());
   document.addEventListener('kit-library-trouble', () => void drawStorage());
   window.addEventListener('storage', e => { if (e.key === 'dj-crate') void draw(); });
-  window.addEventListener('hashchange', () => { if (location.hash === '#carts') void draw(); });   /* (crate cards may have changed) */
-  void draw();
+  window.addEventListener('hashchange', () => { if (location.hash === '#carts') { void draw(); if (connected) void drawFm1(true); } });   /* (crate cards may have changed) */
+  document.addEventListener('device-state', e => { connected = !!e.detail?.connected; if (!connected) onFm1 = null; void drawFm1(connected && location.hash === '#carts'); });
+  void draw(); void drawFm1();
 }

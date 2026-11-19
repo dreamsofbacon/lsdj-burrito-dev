@@ -107,6 +107,13 @@ export async function runCartsTabUiTests() {
     await pick($('st-cart'), base.id);
     await until(() => /Kit names from My live LSDj/.test($('st-status').textContent), `Songs uses it: ${$('st-status').textContent}`);
     assert(!(await libraryFiles()).some(f => f.name === 'notes.gb'), 'the bad file not kept');
+
+    /* no FM-1 here: the tab says to connect one; before an install, the copy check says it couldn't tell and goes on */
+    location.hash = '#carts';
+    await until(() => /Connect an FM-1/.test($('carts-fm1').textContent), `no FM-1: ${$('carts-fm1').textContent}`);
+    const said = [], {keepBeforeInstall} = await import('../lsdj/carts-ui.js');
+    assert(await keepBeforeInstall(t => said.push(t)) === true, 'no FM-1: the install isn\'t stopped');
+    assert(/Couldn't tell which LSDj the FM-1 has/.test(said.join(' ')), `said: ${said}`);
     return 'PASS Cartridges tab: added and listed (a bad file said), Install… opens it, kit ticks kept and restored from the picker, renamed, kit edits linked and the in-between copy cleaned up, a crate card protects it, Songs & kits picks it';
   } finally {
     window.confirm = confirmWas;

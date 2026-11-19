@@ -14,7 +14,7 @@ import {mountSetsUi, rememberRom} from './sets-ui.js';
 import {addToCrate} from './crate-ui.js';
 import {backups, KEEP} from './backups.js';
 import {storageState} from './kit-library.js';
-import {cartridges, cartName} from './cartridges.js';
+import {cartridges, cartName, matchCart} from './cartridges.js';
 import {cartPicker} from './carts-ui.js';
 
 const $ = id => document.getElementById(id);
@@ -282,6 +282,14 @@ async function sendPending() {
   say(done ? `Done: ${needs.title}'s LSDj and songs are on the FM-1.` : `Installed, but sending the songs failed (${why}). Press "2. Send ${needs.title}'s songs" to try again.`, done ? 'ok' : 'bad');
 }
 /* chosen: picked here (a file or the FM-1's), which a ROM chosen later in Install doesn't replace */
+/* songs read from the FM-1: kit names from the cartridge it has, when it's kept here and none was chosen */
+async function namesFromFm1() {
+  if (state.romChosen || !hooks.cartInfo) return;
+  try {
+    const m = await matchCart((await hooks.cartInfo()).dataCrc);
+    if (m) { useRom(m.cart.bytes, `${cartName(m.cart)} (what the FM-1 has)`); return; }
+  } catch { /* can't tell: names come from an LSDj chosen here */ }
+}
 /* a cartridge (Cartridges, or the picker here) for the kit names */
 function useCart(c) { useRom(c.bytes, cartName(c)); say(`Kit names from ${cartName(c)}.`, 'ok'); }
 export function useRom(rom, from, chosen = true) {
@@ -358,7 +366,7 @@ export function mountSongsUi(root) {
     el('div', {className: 'row'}, el('label', {className: 'row'}, 'FM-1 ', dev)),
     el('div', {className: 'row'},
       b('Open a .sav…', () => savIn.click()), savIn,
-      b('Read songs from the FM-1', async () => { say('Reading songs from the FM-1…'); openSave(await withProgress(hooks.readSave), 'the FM-1'); }),
+      b('Read songs from the FM-1', async () => { say('Reading songs from the FM-1…'); openSave(await withProgress(hooks.readSave), 'the FM-1'); await namesFromFm1(); }),
       b('Add .lsdsng songs…', () => songIn.click(), {id: 'st-add', disabled: true}), songIn,
       b('Download .sav', () => download(state.sav.bytes, 'lsdj.sav'), {id: 'st-download', disabled: true}),
       b('Send to the FM-1', sendOpenSave, {id: 'st-send', disabled: true}),

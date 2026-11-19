@@ -58,4 +58,25 @@ await C.forgetCartridge(e3.id);
 assert.equal(C.installCart(), null);
 assert.ok(!(await C.cartridges()).some(c => c.id === e3.id));
 assert.ok(events.some(e => e.type === 'kit-library'), 'changes announced');
-console.log('cartridges: checked, kept once, named, kit choice, edit chains cleaned up, crate cards protected');
+
+/* which cartridge an FM-1 has (phase 3): by the CRC kept when prepared or read, else worked out from its kits */
+const {listKits} = await import('../lsdj/lsdj-rom.js');
+const m1 = await C.addCartridge(rom(20), 'match.gb');
+const all = listKits(m1.bytes).map(k => k.bank);
+assert.equal(all.length, 2);
+const crcAll = await C.dataCrcOf(m1.bytes, all), crcOne = await C.dataCrcOf(m1.bytes, [all[1]]);
+assert.notEqual(crcAll, crcOne, 'other kits, another CRC');
+assert.equal(await C.matchCart(12345), null, 'an LSDj not kept here');
+let hit = await C.matchCart(crcAll);
+assert.equal(hit.cart.id, m1.id, 'an install from before cartridges kept CRCs: matched with all its kits');
+assert.deepEqual(hit.kits, all);
+assert.ok((await C.cartridges()).find(c => c.id === m1.id).prints.some(p => p.dataCrc === crcAll), 'and the match kept');
+await C.saveKitChoice(m1.id, [all[1]]);
+hit = await C.matchCart(crcOne);
+assert.equal(hit.cart.id, m1.id, 'with the kits it is set to install'); assert.deepEqual(hit.kits, [all[1]]);
+await C.notePrint(a.id, 777, [8]);
+hit = await C.matchCart(777);
+assert.equal(hit.cart.id, a.id, 'a CRC kept when read from an FM-1'); assert.deepEqual(hit.kits, [8]);
+for (let n = 0; n < 20; n++) await C.notePrint(a.id, 1000 + n, [8]);
+assert.equal((await C.cartridges()).find(c => c.id === a.id).prints.length, 12, 'the last 12 kept');
+console.log('cartridges: checked, kept once, named, kit choice, edit chains cleaned up, crate cards protected, an FM-1 matched to its cartridge');

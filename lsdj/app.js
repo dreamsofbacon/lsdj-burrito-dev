@@ -1226,6 +1226,11 @@ async function searchFm1s() {
   say('device', `${found.length} FM-1s found: choose one.`, 'warn');
   throw new LinkError(`${found.length} FM-1s found: choose one in the FM-1 list.`);
 }
+/* which LSDj the FM-1 in use has (Cartridges, install-ui.js): {fm1: its name, size, headerCrc, dataCrc} */
+export async function installedCartInfo() {
+  const info = await exclusive(l => l.cartridgeInfo());
+  return {fm1: fm1Name(current), ...info};
+}
 export async function readInstalledCartridge(progress, signal) {
   await connectUsbQuietly();
   if (!link || !connected) throw new LinkError('No FM-1 found over USB. Turn it on and plug it in with a data cable, or connect to the running FM-1 in My FM-1 (choose its MIDI port; with several plugged in, choose the one to read), then try Read from my FM-1 again.');
