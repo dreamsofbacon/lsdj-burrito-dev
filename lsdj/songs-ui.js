@@ -8,6 +8,7 @@
 // The parsing is lsdj-sav.js, lsdj-kit.js, lsdj-usage.js (tested in node).
 import {parseSav, songBytes, buildSav, readLsdsng, writeLsdsng, nameBytes, nameText, SavError, SAV_SIZE, SLOTS, BLOCK_COUNT} from './lsdj-sav.js';
 import {kitSlots, kitSampleNibbles, BANK} from './lsdj-kit.js';
+import {checkRomFile} from './lsdj-rom.js';
 import {kitUsage, usageAcross, romFit, bestRom} from './lsdj-usage.js';
 import {mountSetsUi, rememberRom} from './sets-ui.js';
 import {addToCrate} from './crate-ui.js';
@@ -302,10 +303,10 @@ async function guard(fn) { try { await fn(); } catch (e) { say(e.message, 'bad')
 /* the song backups (backups.js: made before songs are sent to an FM-1, the last KEEP per FM-1): open one here
    (then send it back, or save it), or download it */
 async function drawBackups() {
-  const box = $('st-backup-list');
-  if (!box) return;
+  if (!$('st-backup-list')) return;
   const list = await backups();
-  const sum = $('st-backups').querySelector('summary');
+  const box = $('st-backup-list'), sum = $('st-backups')?.querySelector('summary');   /* (again: redrawn meanwhile) */
+  if (!box || !sum) return;
   sum.textContent = `Song backups (${list.length}): what an FM-1 held before songs were sent to it, the last ${KEEP} per FM-1`;
   box.replaceChildren(list.length ? el('ul', {className: 'st-backups'}, ...list.map(f => el('li', {},
     el('span', {textContent: f.name + ' '}),
@@ -315,9 +316,9 @@ async function drawBackups() {
 }
 /* this browser's storage, when it doesn't keep things (a private window, full, refused): said, not hidden */
 async function drawStorage() {
-  const p = $('st-storage');
+  if (!$('st-storage')) return;
+  const s = await storageState(), p = $('st-storage');
   if (!p) return;
-  const s = await storageState();
   const full = s.quota && s.used != null && s.used / s.quota > 0.9;
   const text = s.trouble || (!s.kept ? 'This browser keeps no files for this page: your LSDj files, songs and backups last only until it closes.'
     : full ? `This browser's storage for this page is nearly full (${Math.round(s.used / 1048576)} of ${Math.round(s.quota / 1048576)} MB): new backups and files may not be kept.` : '');
@@ -332,8 +333,9 @@ export function mountSongsUi(root) {
   const savIn = file('.sav', false, async ([f]) => openSave(new Uint8Array(await f.arrayBuffer()), f.name));
   const romIn = file('.gb,.gbc', true, async fs => {
     const roms = await Promise.all(fs.map(async f => {
-      if (f.size % 0x4000 || f.size > 0x200000) throw new SavError(`${f.name} isn't an LSDj ROM (.gb).`);
-      return {name: f.name, rom: new Uint8Array(await f.arrayBuffer())};
+      const rom = new Uint8Array(await f.arrayBuffer());
+      try { checkRomFile(rom, f.name); } catch (e) { throw new SavError(e.message); }
+      return {name: f.name, rom};
     }));
     probeRoms(roms);
     for (const r of roms) if (kitSlots(r.rom).length) await rememberRom(r.rom, r.name);

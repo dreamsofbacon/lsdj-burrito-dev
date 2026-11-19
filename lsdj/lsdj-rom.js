@@ -60,6 +60,13 @@ export async function findProfile(rom) {
   return null;
 }
 
+/* validateRom for a file the user chose: the same check everywhere a ROM comes in (Install, Songs and kits, Sets, the
+   crate, the cart maker), its message with the file's name. Sets took any file of whole banks with kit slots, Songs
+   only checked the size, Install took .gb only (the others .gbc too): the cartridge plan, phase 1. */
+export function checkRomFile(rom, name) {
+  try { validateRom(rom); } catch (e) { throw Error(`${name}: ${e.message}`); }
+  return rom;
+}
 export function validateRom(rom) {
   /* (LSDj 3.1.5 to 4.1.0 call themselves "LSDJ": an older LSDj, untested on the FM-1, still LSDj) */
   if (!(rom instanceof Uint8Array) || rom.length < 0x150 || !/^LSDj/i.test(title(rom)))

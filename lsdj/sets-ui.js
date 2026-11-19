@@ -10,7 +10,7 @@ import * as S from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary, clearLibrary, hashOf} from './kit-library.js';
 import {zipStore} from './zip.js';
 import {songsState, openSave, sendOpenSave, sendAfterInstall, playButton} from './songs-ui.js';
-import {buildSlot} from './lsdj-rom.js';
+import {buildSlot, checkRomFile} from './lsdj-rom.js';
 import {addToCrate} from './crate-ui.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
@@ -63,7 +63,8 @@ async function addFiles(files) {
       if (!isKitBank(bytes)) throw new SavError(`${f.name} isn't an LSDj .kit file.`);
       await addToLibrary('kit', f.name, bytes.subarray(0, BANK));
     } else {
-      if (bytes.length % BANK || bytes.length > 0x200000 || !kitSlots(bytes).length) throw new SavError(`${f.name} isn't an LSDj ROM (.gb) with kit slots.`);
+      try { checkRomFile(bytes, f.name); } catch (e) { throw new SavError(e.message); }
+      if (!kitSlots(bytes).length) throw new SavError(`${f.name}: this LSDj has no kit slots, so sets can't put kits in it.`);
       await addToLibrary('rom', f.name, bytes);
     }
     added.push(f.name);

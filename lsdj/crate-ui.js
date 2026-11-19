@@ -298,6 +298,14 @@ function askBox(item, t) {
       (heldBy(item, t).includes(d?.name) ? '' : ' Grab its songs first to keep them.')}),
     (() => { const n = item.rom ? t.tooNew : tooNewFor(t, asking.fm1, asking.slot), lsdj = item.rom ? `This card's LSDj (${t.version})` : `Deck ${d?.name}'s FM-1 runs ${asking.fm1?.title}, which`;
       return n.length ? el('p', {className: 'warn crate-needs', textContent: `${lsdj} can't open ${n.join(', ')}: saved by a newer LSDj. Load an LSDj that can (a cart made with it, or its .gb) first.`}) : null; })(),
+    /* can't tell (an LSDj or songs whose format the page doesn't know): said, not taken as fine (the cartridge plan) */
+    (() => { if (!item.sav) return null;
+      const lsdjFmt = item.rom ? t.format : asking.fm1 ? asking.fm1.format : undefined, songs = t.songList.filter(x => asking.slot == null || x.slot === asking.slot);
+      const unknown = songs.filter(x => x.format == null).map(x => x.name);
+      const text = lsdjFmt === null && songs.length ?   /* (undefined: the deck's FM-1 hasn't said yet) */
+        `The page doesn't know ${item.rom ? "this card's LSDj" : `deck ${d?.name}'s LSDj`} well enough to check these songs open in it.`
+        : unknown.length ? `The page can't read the format of ${unknown.join(', ')}, so it can't check ${unknown.length === 1 ? 'it opens' : 'they open'} in this LSDj.` : '';
+      return text ? el('p', {className: 'hint crate-needs', textContent: `${text} Load it if you know it does.`}) : null; })(),
     el('div', {className: 'crate-ask-acts'},
       btn(`Load ${d?.name}`, () => void loadOnto(item.id, asking.i, asking.slot), {className: 'primary'}),
       btn('Cancel', () => { asking = null; drawList(); })));
