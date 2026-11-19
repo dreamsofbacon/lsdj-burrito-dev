@@ -43,7 +43,7 @@ const bytesOf = id => files.get(id)?.bytes || null;
    #rrggbb; img: a picture's bytes (cart-label.js shrinkImage) */
 export async function addToCrate({name, rom = null, sav = null, color = 'grey', img = null}) {
   const r = rom ? await addToLibrary('rom', `${name}.gb`, rom) : null;
-  const s = sav ? await addToLibrary('sav', `${name}.sav`, sav) : null;
+  const s = sav ? await addToLibrary('sav', `${name}.sav`, sav, {crc: crc32(sav)}) : null;   /* (crc: backups.js knows it kept) */
   const p = img ? await addToLibrary('img', `${name}.jpg`, img) : null;
   items = addItem(items, {name, rom: r?.id || null, sav: s?.id || null, color, img: p?.id || null});
   save(); await refreshFiles(); setOpen(true); draw();
@@ -422,6 +422,8 @@ function draw() { drawGrabs(); drawList(); }
 
 export async function mountCrate(box) {
   root = box;
+  /* (storage that isn't kept: the cards and their files last only for this visit; kit-library.js) */
+  if (!mountCrate.heard) { mountCrate.heard = true; document.addEventListener('kit-library-trouble', e => say(e.detail.text, 'warn')); }
   const pick = el('input', {type: 'file', accept: '.sav,.gb,.gbc', multiple: true, hidden: true,
     onchange: async () => { await openFiles([...pick.files]); pick.value = ''; }});
   const search = el('input', {type: 'search', placeholder: 'Find a card or song', className: 'crate-search',

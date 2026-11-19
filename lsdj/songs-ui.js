@@ -11,6 +11,8 @@ import {kitSlots, kitSampleNibbles, BANK} from './lsdj-kit.js';
 import {kitUsage, usageAcross, romFit, bestRom} from './lsdj-usage.js';
 import {mountSetsUi, rememberRom} from './sets-ui.js';
 import {addToCrate} from './crate-ui.js';
+import {backups, KEEP} from './backups.js';
+import {storageState} from './kit-library.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
@@ -297,6 +299,30 @@ export async function addLsdsng(files) {
 }
 
 async function guard(fn) { try { await fn(); } catch (e) { say(e.message, 'bad'); } }
+/* the song backups (backups.js: made before songs are sent to an FM-1, the last KEEP per FM-1): open one here
+   (then send it back, or save it), or download it */
+async function drawBackups() {
+  const box = $('st-backup-list');
+  if (!box) return;
+  const list = await backups();
+  const sum = $('st-backups').querySelector('summary');
+  sum.textContent = `Song backups (${list.length}): what an FM-1 held before songs were sent to it, the last ${KEEP} per FM-1`;
+  box.replaceChildren(list.length ? el('ul', {className: 'st-backups'}, ...list.map(f => el('li', {},
+    el('span', {textContent: f.name + ' '}),
+    el('button', {type: 'button', textContent: 'Open', title: 'Open these songs here: then send them back, or save them', onclick: () => guard(async () => openSave(f.bytes, `Backup: ${f.name}`))}),
+    el('button', {type: 'button', textContent: 'Download .sav', onclick: () => download(f.bytes, `${f.name.replace(/[^\w .-]+/g, '-')}.sav`)}))))
+    : el('p', {className: 'hint', textContent: 'None yet. Before songs are sent to an FM-1, what it holds is kept here first.'}));
+}
+/* this browser's storage, when it doesn't keep things (a private window, full, refused): said, not hidden */
+async function drawStorage() {
+  const p = $('st-storage');
+  if (!p) return;
+  const s = await storageState();
+  const full = s.quota && s.used != null && s.used / s.quota > 0.9;
+  const text = s.trouble || (!s.kept ? 'This browser keeps no files for this page: your LSDj files, songs and backups last only until it closes.'
+    : full ? `This browser's storage for this page is nearly full (${Math.round(s.used / 1048576)} of ${Math.round(s.quota / 1048576)} MB): new backups and files may not be kept.` : '');
+  p.textContent = text; p.hidden = !text;
+}
 export function mountSongsUi(root) {
   const file = (accept, multiple, f) => {
     const i = el('input', {type: 'file', accept, multiple, hidden: true});
@@ -339,8 +365,13 @@ export function mountSongsUi(root) {
     el('progress', {id: 'st-progress', value: 0, max: 1, hidden: true}),
     el('p', {id: 'st-status', className: 'hint', role: 'status'}),
     el('div', {id: 'st-report'}),
+    el('p', {id: 'st-storage', className: 'warn', hidden: true}),
+    el('details', {id: 'st-backups'}, el('summary', {textContent: 'Song backups'}), el('div', {id: 'st-backup-list'})),
     el('div', {id: 'st-sets', className: 'sets'}));
   drawSongsDevices([], '');
+  void drawBackups(); void drawStorage();
+  document.addEventListener('kit-library', () => void drawBackups());
+  document.addEventListener('kit-library-trouble', () => void drawStorage());
   mountSetsUi($('st-sets'));
   document.addEventListener('firmware-installed', () => guard(sendPending));
   document.addEventListener('install-rom', e => { if (e.detail?.rom && !state.romChosen) useRom(e.detail.rom, `the LSDj chosen in Install (${e.detail.name})`, false); });

@@ -9,6 +9,7 @@ import {showDeviceTheme, setMatching, matching} from './page-theme.js';
 import {setBeforeInstall, installing, installTarget, usbMidiUnavailable} from './install-ui.js';
 import {setCrateHooks} from './crate-ui.js';
 import {logEvent} from './conn-log.js';
+import {backupSongs} from './backups.js';
 import {fm1Numbers} from './fm1-numbers.js';
 import {CHANNELS, pagesForFx, PARAM, paramGet, paramSet, valueText, channelSummary, unpackFx, packFx, unpackReverb, packReverb, packReverbSends, PRESETS, THEMES, COLOR_NAMES, toHex, fromHex,
         SETTINGS, unpackSettings, packSettings, MIDI_SETTINGS, MIDI_CC_MAP, unpackMidi, packMidi, CUSTOM_THEME, isMasterPage,
@@ -1266,9 +1267,17 @@ async function exclusive(fn) {
 /* a .sav sent to the FM-1 in use: its name on that FM-1's DJ deck (dj-ui.js rememberSav; the CRC says later
    whether the FM-1 still holds it) */
 function sentSav(bytes, name) { if (!virtual && current) rememberSav(portKey(current), name, crc32(bytes)); }
+/* the songs an FM-1 holds, backed up in this browser before new ones are sent (backups.js; the last 5 per FM-1).
+   A backup that can't be read stops the send: nothing is sent. quickOnly: a DJ load, only where it takes seconds */
+const fm1Name = d => virtual ? 'The virtual FM-1' : d ? `FM-1 ${fm1No(d)}` : 'The FM-1';
+async function backupFirst(l, d, {quickOnly = false, progress} = {}) {
+  try { await backupSongs(l, fm1Name(d), {quickOnly, progress, log: logEvent}); }
+  catch (e) { throw new LinkError(`The songs on ${fm1Name(d)} couldn't be backed up first (${e.message}). Nothing was sent.`); }
+}
 setSongsHooks({
   readSave: pr => exclusive(l => l.exportSave(pr)),
   sendSave: (bytes, pr) => exclusive(async l => {
+    await backupFirst(l, current, {progress: pr});
     await l.importSave(bytes, pr);
     const from = songsState().from;
     sentSav(bytes, from && from !== 'the FM-1' ? from : 'Songs sent from this page');
@@ -1391,7 +1400,11 @@ setCrateHooks({
   rescan: async () => (await scan()).map(d => ({key: portKey(d), title: d.info.title})),
   readSave: (key, pr) => crateLink(key).exportSave(pr),
   readRom: async (key, pr) => romFromSlot(await crateLink(key).exportCartridge(pr)),
-  sendSave: async (key, bytes, name, pr) => { await crateLink(key).importSave(bytes, pr); rememberSav(key, name, crc32(bytes)); },
+  sendSave: async (key, bytes, name, pr) => {
+    const l = crateLink(key);
+    await backupFirst(l, devOf(key), {quickOnly: true});
+    await l.importSave(bytes, pr); rememberSav(key, name, crc32(bytes));
+  },
   info: key => crateLink(key).info(),
   volumeFull: async key => { try { await djLinkFor(key)?.volumeSet(127); } catch { /* older firmware, or gone: full at its next start */ } },
 }, {});
@@ -1527,6 +1540,8 @@ $('import').onchange = e => {
     const payload = confirmSaveImport(bytes, file.name, message => confirm(message));
     if (!payload) return say('save-status', 'Import cancelled. Nothing was sent.');
     const note = bytes.length > SAVE_SIZE ? ' The final 16 bytes were excluded with your confirmation; the original file is unchanged.' : '';
+    say('save-status', 'Backing up the songs on the FM-1 first…');
+    await backupFirst(link, current, {progress: progress()});
     say('save-status', 'Sending songs to the FM-1…' + note);
     await link.importSave(payload, progress());
     sentSav(payload, file.name);
