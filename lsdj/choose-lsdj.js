@@ -21,7 +21,7 @@ function songsIn(savs) {
 }
 /* the cartridges, best fit first -> [{c, fit}] (fit null: no songs to go by) */
 export async function rankCartridges(savs) {
-  const list = await cartridges(), songs = songsIn(savs);
+  const list = (await cartridges()).filter(c => c.from !== 'made'), songs = songsIn(savs);   /* (not the crate's cut-down ones) */
   if (!songs.length) return list.map(c => ({c, fit: null}));
   const usage = usageAcross(songs);
   const {fits} = bestRom(list.map(c => ({c, slots: kitSlots(c.bytes)})), usage);

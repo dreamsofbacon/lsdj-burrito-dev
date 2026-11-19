@@ -125,6 +125,37 @@ export function view(st, req, capacity) {
   return out;
 }
 
+/* songs and the LSDj chosen for them -> cartridges that fit the FM-1: that LSDj holding only the kits and samples the
+   songs play, and a .sav (as the cart maker builds them; the crate never keeps one that can't load). rom: the LSDj;
+   savs: [{name, bytes}]; each: a cartridge a song (else as few as it takes); capacity: the FM-1's slot.
+   -> [{rom, sav, songs: [names], fits, kib, warnings}] */
+export function fitCarts({rom, savs, capacity, each = false}) {
+  validateRom(rom);
+  const lsdj = romEntry('chosen', 'the LSDj chosen', rom);
+  if (!lsdj.slots.length) throw new SavError('This LSDj has no kit slots, so it can\'t be made smaller for its songs.');
+  const songs = [];
+  let template = null;
+  for (const {name: from, bytes} of savs) {
+    const sav = parseSav(savBody(bytes).slice());
+    template ??= sav.bytes;
+    for (const s of sav.songs) {
+      try { songs.push({id: `${from}:${s.slot}:${songs.length}`, group: from, from, slot: null, name: s.name, nameBytes: sav.bytes.slice(0x8000 + s.slot * 8, 0x8008 + s.slot * 8), version: s.version, song: songBytes(sav, s.slot)}); }
+      catch (e) { if (!(e instanceof SavError)) throw e; }
+    }
+  }
+  if (!songs.length) throw new SavError('No saved songs in it to make the cartridge for.');
+  const resolved = S.resolveSongs(songs, [lsdj], [], {madeWith: Object.fromEntries(songs.map(s => [s.id, 'chosen']))});
+  for (const r of resolved) r.blocks = S.blocksOf(r.song);
+  const ctx = S.setContext(rom, capacity);
+  const out = [];
+  for (const group of each ? resolved.map(r => [r]) : [resolved])
+    for (const p of S.planSplit(group, ctx)) {
+      const b = S.buildSet(p, ctx, template);
+      out.push({rom: b.rom, sav: b.sav, songs: b.songs.map(s => s.name), fits: b.plan.fits, kib: Math.ceil(b.plan.needed / 1024), warnings: b.warnings});
+    }
+  return out;
+}
+
 /* the carts of the last view: [{rom, sav, report, songs, kits, kib, fits, warnings}] */
 export function build(st, titles = []) {
   const {plans} = st.last ?? {};

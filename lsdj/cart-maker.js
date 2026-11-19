@@ -26,6 +26,9 @@ function call(type, m = {}, transfer = []) {
     onerror: e => { for (const p of pending.values()) p.reject(Error(e.message || 'The cart maker stopped.')); pending.clear(); }});
   return new Promise((resolve, reject) => { const id = nextId++; pending.set(id, {resolve, reject}); worker.postMessage({id, type, ...m}, transfer); });
 }
+/* songs and their LSDj -> cartridges that fit the FM-1 (cart-core.js fitCarts), worked out off the page's thread */
+export const fitInWorker = ({rom, savs, each = false, cap = capacity}) =>
+  call('fit', {rom: rom.slice(), savs: savs.map(s => ({name: s.name, bytes: s.bytes.slice()})), capacity: cap, each});
 async function sendLibrary() {
   const files = (await libraryFiles()).filter(f => f.kind === 'rom' || f.kind === 'kit').map(f => ({id: f.id, kind: f.kind, name: f.name, bytes: f.bytes}));
   await call('library', {files, built: built()});

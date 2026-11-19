@@ -12,7 +12,7 @@ import {kitSlots, kitSampleNibbles, BANK} from './lsdj-kit.js';
 import {checkRomFile} from './lsdj-rom.js';
 import {kitUsage, usageAcross, romFit, bestRom} from './lsdj-usage.js';
 import {mountSetsUi, rememberRom} from './sets-ui.js';
-import {addToCrate} from './crate-ui.js';
+import {addToCrate, cartsFor} from './crate-ui.js';
 import {backups, KEEP} from './backups.js';
 import {storageState} from './kit-library.js';
 import {cartridges, cartName, matchCart} from './cartridges.js';
@@ -308,14 +308,17 @@ async function lsdjFor(title) {
 async function splitDownload() {
   const list = splitSongs(), c = await lsdjFor(`these ${list.length} songs`);
   if (!c) return say('Nothing was exported: a cartridge needs its LSDj.', 'warn');
-  const files = list.flatMap((s, i, all) => { const n = savName(s, i, all).replace(/\.sav$/, ''); return [{name: `${n}/${n}.gb`, bytes: c.bytes}, {name: `${n}/${n}.sav`, bytes: s.bytes}]; });
+  say('Making each song\'s cartridge (only the kits and samples it plays, when the whole LSDj is too big for the FM-1)…');
+  const carts = await cartsFor({name: crateName(), rom: c.bytes, sav: state.sav.bytes, each: true});
+  const files = carts.flatMap((s, i, all) => { const n = savName(s, i, all).replace(/\.sav$/, ''); return [{name: `${n}/${n}.gb`, bytes: s.rom}, {name: `${n}/${n}.sav`, bytes: s.sav}]; });
   download(zipStore(files), `${crateName().replace(/[^A-Za-z0-9 _-]/g, '_') || 'songs'} - a cartridge per song.zip`);
   say(`${list.length} cartridge${list.length === 1 ? '' : 's'} in a .zip, one a song: a folder each with ${c.name} as NAME.gb and the song as NAME.sav, opening on its song.`, 'ok');
 }
 async function splitCrate() {
   const list = splitSongs(), c = await lsdjFor(`these ${list.length} songs`);
   if (!c) return say('Nothing was added: a cartridge needs its LSDj.', 'warn');
-  for (const s of list) await addToCrate({name: s.name, rom: c.bytes, sav: s.bytes});
+  say('Making each song\'s cartridge (only the kits and samples it plays, when the whole LSDj is too big for the FM-1)…');
+  for (const s of await cartsFor({name: crateName(), rom: c.bytes, sav: state.sav.bytes, each: true})) await addToCrate({name: s.name, rom: s.rom, sav: s.sav});
   say(`${list.length} cartridge${list.length === 1 ? '' : 's'} in the DJ crate (Perform › DJ), one a song with ${c.name}: each loads onto a deck straight into its song.`, 'ok');
 }
 async function wholeToCrate() {

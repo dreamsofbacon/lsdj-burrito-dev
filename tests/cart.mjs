@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import {BANK, kitSlots, parseKit, buildKit} from '../lsdj/lsdj-kit.js';
 import {parseSav, songBytes, buildSav, writeLsdsng, readLsdprj, SAV_SIZE} from '../lsdj/lsdj-sav.js';
 import * as S from '../lsdj/lsdj-sets.js';
-import {newState, setLibrary, addFiles, view, build} from '../lsdj/cart-core.js';
+import {newState, setLibrary, addFiles, view, build, fitCarts} from '../lsdj/cart-core.js';
+import {planRom, listKits} from '../lsdj/lsdj-rom.js';
+import {splitSav} from '../lsdj/lsdj-sav.js';
 import {kitOf, lsdj, song, blank, prj} from './lsdj-fixtures.mjs';
 
 /* ---- .lsdprj: a song, then its kits as whole banks (none, or several) ---- */
@@ -90,4 +92,24 @@ const bare = newState(); await addFiles(bare, [{name: 'proj.lsdprj', bytes: prj(
 const vb = view(bare, {plan: 'split'}, 400000);
 assert.equal(vb.songs.length, 1); assert.equal(vb.plans.length, 0); assert.equal(vb.baseId, null);
 assert.throws(() => build(bare), /Nothing to build/);
-console.log('cart: PASS (.lsdprj with and without kits, a project\'s kit numbers, files in (a save with a footer, .lsdsng, .lsdprj, others skipped), each song\'s kits and status, carts planned, built with only the kits played and songs renumbered, carts made here not sources, the fully known LSDj first, no LSDj)');
+/* the crate: songs and the LSDj chosen for them, the LSDj too big with all its kits -> cartridges that fit, holding
+   only the kits (and samples) the songs play; a cartridge a song too */
+{
+  const big = lsdj('9.3.9', [kitOf('ALPHA', [40, 40], true, 1), kitOf('BRAVO', [60, 60], true, 7), kitOf('XTRA', [60, 60], true, 11)]);
+  const all = listKits(big).map(k => k.bank), cap = planRom(big, all.slice(0, 2), 1 << 30).needed + 1024;   /* (room for the two kits played, not the third) */
+  assert.ok(!planRom(big, all, cap).fits, 'the whole LSDj does not fit this slot');
+  const sav = buildSav(blank(), sA, [{slot: 0, name: 'ONE', song: sA}, {slot: 3, name: 'TWO', song: song([{ins: 0, k1: 1}], [0x10])}], 0);
+  const [c, ...more] = fitCarts({rom: big, savs: [{name: 'set.sav', bytes: sav}], capacity: cap});
+  assert.equal(more.length, 0, 'one cartridge');
+  assert.ok(c.fits && planRom(c.rom, listKits(c.rom).map(k => k.bank), cap).fits, 'it fits, all its kits in');
+  const names = kitSlots(c.rom).filter(x => !x.empty).map(x => x.kit.name.trim());
+  assert.deepEqual(names.sort(), ['ALPHA', 'BRAVO'], `only the kits played: ${names}`);
+  assert.deepEqual(c.songs, ['ONE', 'TWO']);
+  const each = fitCarts({rom: big, savs: [{name: 'set.sav', bytes: sav}], capacity: cap, each: true});
+  assert.equal(each.length, 2, 'a cartridge a song');
+  assert.deepEqual(each.map(x => kitSlots(x.rom).filter(k => !k.empty).map(k => k.kit.name.trim())), [['ALPHA'], ['BRAVO']]);
+  for (const x of each) { const p = parseSav(x.sav); assert.equal(p.songs.length, 1); assert.equal(p.active, 0, 'opens on its song'); }
+  assert.equal(splitSav(sav).length, 2);
+  assert.throws(() => fitCarts({rom: big, savs: [{name: 'empty.sav', bytes: blank()}], capacity: cap}), /No saved songs/);
+}
+console.log('cart: PASS (made to fit: only the kits played, a cartridge a song; .lsdprj with and without kits, a project\'s kit numbers, files in (a save with a footer, .lsdsng, .lsdprj, others skipped), each song\'s kits and status, carts planned, built with only the kits played and songs renumbered, carts made here not sources, the fully known LSDj first, no LSDj)');

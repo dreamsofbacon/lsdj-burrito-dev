@@ -19,6 +19,7 @@ export function originText(c, byId = new Map()) {
   if (c.from === 'edited') { const p = byId.get(c.parent); return p ? `kits changed from ${cartName(p)}` : 'kits changed from another cartridge'; }
   if (c.from === 'fm1') return `read from ${c.fm1 || 'an FM-1'}`;
   if (c.from === 'set') return 'made in Sets';
+  if (c.from === 'made') return 'made for a DJ crate cartridge (only its songs\' kits)';
   return 'a file';
 }
 

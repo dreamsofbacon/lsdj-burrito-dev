@@ -4,12 +4,14 @@
 // Export cartridges makes a .zip of them all. Synthetic files only; no FM-1.
 import {KEY, loadItems} from '../lsdj/crate.js';
 import {buildSav, SAV_SIZE} from '../lsdj/lsdj-sav.js';
-import {lsdj} from './lsdj-fixtures.mjs';
+import {lsdj, kitOf, song as kitSong} from './lsdj-fixtures.mjs';
+import {planRom, listKits} from '../lsdj/lsdj-rom.js';
+import {libraryFiles} from '../lsdj/kit-library.js';
 import {hashOf} from '../lsdj/kit-library.js';
 
 const assert = (c, m) => { if (!c) throw Error(m); };
 const tick = () => new Promise(r => setTimeout(r, 50));
-async function until(f, what) { for (let i = 0; i < 200; i++) { const v = await f(); if (v) return v; await tick(); } throw Error(`timed out: ${what}`); }
+async function until(f, what, n = 200) { for (let i = 0; i < n; i++) { const v = await f(); if (v) return v; await tick(); } throw Error(`timed out: ${what}`); }
 const song = n => { const s = new Uint8Array(0x8000); s.fill(0xff, 0x1290, 0x1290 + 1024); s.fill(0xff, 0x2080, 0x2080 + 2048); s.fill(0xff, 0x7000, 0x7000 + 0xff0); s[0] = n; return s; };
 const save = (name, n) => { const b = new Uint8Array(SAV_SIZE); b[0x813e] = 0x6a; b[0x813f] = 0x6b; return buildSav(b, song(n), [{slot: 0, name, song: song(n)}], 0); };
 
@@ -45,6 +47,20 @@ export async function runCrateCompleteUiTests() {
     const alone = await until(() => items().find(i => i.name === 'Alone'), 'Alone added');
     assert(alone.rom === fri.rom && alone.sav, 'with the LSDj chosen');
     assert(!items().some(i => !i.rom), 'no card without an LSDj');
+
+    /* an LSDj too big for the FM-1 with all its kits: the card's is made to fit, only the kit its song plays */
+    const cap = (await (await fetch('lsdj/template.json')).json()).cartridge_capacity;
+    const big = lsdj('9.3.9', Array.from({length: 8}, (_, k) => kitOf(`K${k}`, [480, 480], true, k + 1)));
+    assert(!planRom(big, listKits(big).map(k => k.bank), cap).fits, 'the test LSDj is too big whole');
+    const plays = kitSong([{ins: 0, k1: 0}], [0x10]), bigSav = (() => { const b = new Uint8Array(SAV_SIZE); b[0x813e] = 0x6a; b[0x813f] = 0x6b; return buildSav(b, plays, [{slot: 0, name: 'BIGSONG', song: plays}], 0); })();
+    await pick([[big, 'Big.gb'], [bigSav, 'Big.sav']]);
+    const bigCard = await until(() => items().find(i => i.name === 'Big'), 'Big added', 400);
+    const made = (await libraryFiles()).find(f => f.id === bigCard.rom);
+    assert(bigCard.rom !== await hashOf(big) && made?.from === 'made', 'its own, smaller LSDj');
+    assert(planRom(made.bytes, listKits(made.bytes).map(k => k.bank), cap).fits, 'it fits the FM-1');
+    assert(listKits(made.bytes).length === 1, `only the kit played: ${listKits(made.bytes).length}`);
+    await until(() => card('Big') && !/Too big/.test(card('Big').textContent), 'no "too big" on it');
+    assert(/made to fit/.test(crate.querySelector('.crate-status').textContent), `said: ${crate.querySelector('.crate-status').textContent}`);
 
     /* a card downloads as NAME.gb + NAME.sav; Export cartridges: all of them */
     await until(() => card('Friday'), 'Friday drawn');

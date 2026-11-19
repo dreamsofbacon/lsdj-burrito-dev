@@ -8,9 +8,9 @@ import {KEY, fileKind, loadItems, saveItems, addItem, removeItem, renameItem, pa
 import {labelEditor, paintLabel, shrinkImage, imageUrl, isHex} from './cart-label.js';
 import {opens} from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary} from './kit-library.js';
-import {listKits, crc32} from './lsdj-rom.js';
-import {withOpenSong, savBody, HEADER, HEADER_SIZE} from './lsdj-sav.js';
-import {openCartMaker} from './cart-maker.js';
+import {listKits, crc32, planRom} from './lsdj-rom.js';
+import {withOpenSong, savBody, splitSav, HEADER, HEADER_SIZE} from './lsdj-sav.js';
+import {openCartMaker, fitInWorker} from './cart-maker.js';
 import {logEvent} from './conn-log.js';
 import {loadTemplate, prepareLsdjFirmware} from './lsdj-firmware.js';
 import {installOn, checkPackage, REPLUG} from './install.js';
@@ -47,14 +47,73 @@ const bytesOf = id => files.get(id)?.bytes || null;
    #rrggbb; img: a picture's bytes (cart-label.js shrinkImage). A cartridge is never made without its LSDj (Colin):
    songs given alone ask which LSDj goes with them (choose-lsdj.js; prefer: a cartridge id to pick first). -> the
    item, or null (cancelled: nothing added). An LSDj alone is a cartridge with no songs yet. */
-export async function addToCrate({name, rom = null, sav = null, color = 'grey', img = null, prefer = null}) {
+export async function addToCrate({name, rom = null, sav = null, color = 'grey', img = null, prefer = null, from = 'made'}) {
   if (!rom && !sav) return null;
   if (!rom) {
     const c = await chooseLsdj({title: name, savs: [sav], prefer, action: 'Add to the crate'});
     if (!c) return null;
-    rom = c.bytes;
+    rom = c.bytes; from = 'file';
   }
-  const r = await addToLibrary('rom', `${name}.gb`, rom);
+  /* an LSDj too big for the FM-1 (all its kits): made smaller for its songs, as the cart maker does */
+  if (sav && !(await fitsAsIs(rom))) {
+    say(`${name}: making its LSDj fit the FM-1 (only the kits and samples its songs play)…`);
+    const carts = await cartsFor({name, rom, sav});
+    let first = null;
+    for (const c of carts) { const it = await keep({...c, color, img, from: 'made'}); first ??= it; }
+    fitSaid(name, carts);
+    return first;
+  }
+  return keep({name, rom, sav, color, img, from});
+}
+/* the FM-1's slot for LSDj (template.json), once */
+let capacityP = null;
+const capacity = () => capacityP ??= fetch('lsdj/template.json').then(r => r.json()).then(m => Number.isInteger(m?.cartridge_capacity) ? m.cartridge_capacity : 502016).catch(() => 502016);
+let capacityNow = null; void capacity().then(c => { capacityNow = c; fitCache.clear(); drawList(); });
+/* does this LSDj, all its kits in, fit the FM-1? (then a card keeps it whole: an FM-1 that has it takes only songs) */
+const fitCache = new Map();
+function fitsNow(rom, id = null) {
+  if (capacityNow == null) return true;   /* (not known yet: said once it is) */
+  if (id && fitCache.has(id)) return fitCache.get(id);
+  let ok = true;
+  try { ok = planRom(rom, listKits(rom).map(k => k.bank), capacityNow).fits; } catch { ok = true; }
+  if (id) fitCache.set(id, ok);
+  return ok;
+}
+async function fitsAsIs(rom) { await capacity(); return fitsNow(rom); }
+/* songs (a .sav) and an LSDj -> cartridges [{name, rom, sav}] that load on the FM-1: the LSDj whole when it fits,
+   else holding only the kits and samples the songs play (cart-core.js fitCarts, in the cart maker's worker: the
+   decks keep time). each: a cartridge a song. Also Songs & kits' cartridge-per-song download. */
+export async function cartsFor({name, rom, sav, each = false}) {
+  if (await fitsAsIs(rom))
+    return each ? splitSav(sav).map(s => ({name: s.name, rom, sav: s.bytes})) : [{name, rom, sav}];
+  const out = await fitInWorker({rom, savs: [{name, bytes: sav}], each, cap: await capacity()});
+  return out.map((c, k) => ({name: each ? c.songs[0] ?? `${name} ${k + 1}` : out.length > 1 ? `${name} ${k + 1}` : name,
+    rom: c.rom, sav: c.sav, fits: c.fits, warnings: c.warnings}));
+}
+let fitNote = '';   /* (the last fit said, for a message that follows: Open files…) */
+function fitSaid(name, carts) {
+  const warn = [...new Set(carts.flatMap(c => c.warnings ?? []))], big = carts.filter(c => c.fits === false);
+  fitNote = `${name}: ${carts.length > 1 ? `${carts.length} cartridges (the songs' samples need more than one FM-1 holds)` : 'its LSDj made to fit'}, holding only the kits and samples its songs play.` +
+    (big.length ? ' Still too big for the FM-1: some songs lose samples.' : '') + (warn.length ? ` ${warn.slice(0, 3).join(' ')}` : '');
+  say(fitNote, warn.length || big.length ? 'warn' : 'ok');
+}
+/* a card too big to load (made before cartridges were fitted): made to fit now, its card keeping its name and label */
+async function makeFit(item) {
+  const rom = bytesOf(item.rom), sav = bytesOf(item.sav);
+  if (!rom || !sav) return say(`${item.name}: its file is no longer in this browser. Nothing was changed.`, 'bad');
+  say(`${item.name}: making its LSDj fit the FM-1 (only the kits and samples its songs play)…`);
+  try {
+    const carts = await cartsFor({name: item.name, rom, sav}), before = items;
+    const [first, ...more] = carts;
+    const r = await addToLibrary('rom', `${first.name}.gb`, first.rom, {from: 'made'}), s = await addToLibrary('sav', `${first.name}.sav`, first.sav, {crc: crc32(first.sav)});
+    items = items.map(i => i.id === item.id ? {...i, rom: r.id, sav: s.id} : i); save();
+    for (const c of more) await keep({...c, color: item.color, from: 'made'});
+    await tidy(before); drawList();
+    fitSaid(item.name, carts);
+  } catch (e) { say(`${item.name}: couldn't make it fit (${e.message}). Nothing was changed.`, 'bad'); }
+}
+async function keep({name, rom, sav = null, color = 'grey', img = null, from = 'made'}) {
+  const r = await addToLibrary('rom', `${name}.gb`, rom, {from});
   const s = sav ? await addToLibrary('sav', `${name}.sav`, sav, {crc: crc32(sav)}) : null;   /* (crc: backups.js knows it kept) */
   const p = img ? await addToLibrary('img', `${name}.jpg`, img) : null;
   items = addItem(items, {name, rom: r?.id || null, sav: s?.id || null, color, img: p?.id || null});
@@ -75,6 +134,7 @@ async function completeItem(item) {
   const r = await addToLibrary('rom', `${item.name}.gb`, c.bytes);
   items = items.map(i => i.id === item.id ? {...i, rom: r.id} : i); save(); await refreshFiles(); drawList();
   say(`${item.name}: a whole cartridge now, with ${c.name}.`, 'ok');
+  if (sav && !(await fitsAsIs(c.bytes))) await makeFit(items.find(i => i.id === item.id));
 }
 /* complete cartridges (an LSDj and its songs) out as files: each a folder with NAME.gb and NAME.sav (the same name,
    so emulators and flash carts pair them). Cards without an LSDj are left out (said). */
@@ -110,7 +170,9 @@ function exportAll() {
 }
 /* files no item uses any more, out of the library (saves and pictures: ROMs are shared with Sets) */
 async function tidy(before) {
-  for (const id of [...unusedSaves(items, before), ...unusedImages(items, before)]) await removeFromLibrary(id);
+  /* (an LSDj the crate made smaller for a card's songs goes with its last card; your own LSDj files stay) */
+  const madeRoms = [...new Set(before.map(i => i.rom).filter(Boolean))].filter(r => !items.some(i => i.rom === r) && files.get(r)?.from === 'made');
+  for (const id of [...unusedSaves(items, before), ...unusedImages(items, before), ...madeRoms]) await removeFromLibrary(id);
   await refreshFiles();
 }
 /* a card's label: its colour, its picture (Picture…: made small here, kept in this browser) */
@@ -135,8 +197,9 @@ async function openFiles(list) {
   }
   /* lsdj.gb with lsdj.sav: one cartridge; a .sav alone asks which LSDj goes with it */
   let n = 0;
-  for (const e of byName.values()) if (await addToCrate(e)) n++;
-  if (n) say(`${n} cartridge${n === 1 ? '' : 's'} in the crate.`, 'ok');
+  fitNote = '';
+  for (const e of byName.values()) if (await addToCrate({...e, from: 'file'})) n++;
+  if (n) say(`${n} cartridge${n === 1 ? '' : 's'} in the crate.${fitNote ? ` ${fitNote}` : ''}`, 'ok');
 }
 
 /* after songs are sent: does that FM-1 hold them once LSDj has started on them? -> {bad: what to say} when it doesn't,
@@ -176,7 +239,7 @@ async function grab(d) {
     const sav = await app.readSave(d.key, (n, t) => dj.loading?.(d.i, 'Copying its songs (1 of 2)…', n, t));
     const {rom, kept} = await deckLsdj(d);
     const title = (await app.info?.(d.key).catch(() => null))?.title;
-    await addToCrate({name: `Deck ${d.name}${title ? ` ${title}` : ''} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`, rom, sav});
+    await addToCrate({name: `Deck ${d.name}${title ? ` ${title}` : ''} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`, rom, sav, from: 'fm1'});
     say(`Deck ${d.name}'s songs and LSDj are in the crate as one cartridge${kept ? ' (its LSDj from your cartridges: nothing more read)' : ''}.`, 'ok');
   } catch (e) { say(`Deck ${d.name}: ${e.message}`, 'bad'); }
   finally { busyDeck = -1; dj.loading?.(d.i, null); draw(); }
@@ -190,7 +253,7 @@ async function prepare(rom) {
   try {
     return await prepareLsdjFirmware(rom, listKits(rom).map(k => k.bank), template, metadata, {versions, experimental: true});
   } catch (e) {
-    if (/only \d+ are available/.test(e.message)) throw Error('This LSDj with all its kits is too big for the FM-1. Prepare it in Install, leaving some kits out.');
+    if (/only \d+ are available/.test(e.message)) throw Error('This LSDj with all its kits is too big for the FM-1: press Make it fit on its card (only the kits its songs play), or prepare it in Install, leaving some kits out. Nothing was installed.');
     throw e;
   }
 }
@@ -424,6 +487,7 @@ function card(item, reorder) {
   name.setAttribute('aria-label', 'Name');
   const meta = [t.version ? `LSDj ${t.version}` : null, item.sav ? (t.missing ? 'file missing' : `${t.songs.length} song${t.songs.length === 1 ? '' : 's'}`) : 'no songs'].filter(Boolean).join(' · ');
   const noLsdj = !item.rom && item.sav;
+  const romBytes = item.rom && bytesOf(item.rom), tooBig = !!(romBytes && !fitsNow(romBytes, item.rom));
   const canPair = pairFrom && pairFrom !== item.id && (() => { const o = items.find(x => x.id === pairFrom); return o && !!o.rom !== !!item.rom && !!o.sav !== !!item.sav; })();
   const editing = labelOpen.has(item.id);
   const colour = btn('', () => { if (editing) labelOpen.delete(item.id); else labelOpen.add(item.id); drawList(); },
@@ -463,12 +527,14 @@ function card(item, reorder) {
       el('p', {className: 'crate-meta', textContent: meta, title: t.songs.join(', ')}),
       t.tooNew.length ? el('p', {className: 'crate-needs', textContent: `LSDj ${t.version} can't open ${t.tooNew.join(', ')} (saved by a newer LSDj)`}) : null,
       noLsdj ? el('p', {className: 'crate-needs', textContent: 'No LSDj: not a whole cartridge. Choose its LSDj.'}) : null,
+      tooBig ? el('p', {className: 'crate-needs', textContent: item.sav ? 'Too big for the FM-1 with all its kits: press Make it fit.' : 'Too big for the FM-1 with all its kits: install it from Install, leaving kits out.'}) : null,
       editor),
     songs,
     el('div', {className: 'crate-acts'},
       ...decks.map(d => loadBtn(item, d, t)),
       canPair ? btn('Pair here', async () => { const before = items; items = pairItems(items, pairFrom, item.id); pairFrom = null; save(); await tidy(before); drawList(); }, {className: 'on'})
         : noLsdj ? btn('Choose its LSDj', () => void completeItem(item), {className: 'on', title: 'A cartridge needs its LSDj: the songs\' kit samples are in it'})
+        : tooBig && item.sav ? btn('Make it fit', () => void makeFit(item), {className: 'on', title: 'Keep only the kits and samples its songs play, so it loads on the FM-1'})
         : !item.sav ? btn(pairFrom === item.id ? 'Cancel' : 'Pair', () => { pairFrom = pairFrom === item.id ? null : item.id; drawList(); },
           {title: 'Pair this LSDj with songs: then press Pair here on a card with songs'}) : null,
       item.rom ? btn('⇩', () => exportCart(item), {title: 'Download this cartridge: its LSDj (.gb) and songs (.sav), the same name', ariaLabel: `Download ${item.name}`}) : null,
