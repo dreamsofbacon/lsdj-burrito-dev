@@ -83,7 +83,7 @@ const mixer = {id: store.get('dj-mixer', 'none'), inId: store.get('dj-mixer-in',
   map: JSON.parse(store.get('dj-mixer-map', '[1,2]')), learned: loadLearned(store.get('dj-learned', '[]')), learning: null,
   xfader: 0.5, curve: store.get('dj-curve', 'smooth'), faders: {}, input: null, note: ''};
 const decks = [0, 1].map(i => ({i, key: '', kind: '', bpm: master.bpm, clock: null, live: null, fx: null, rv: null, base: null,
-  kill: 0, killOnBar: store.get('dj-killbar', '0') === '1', filter: 0, filterBy: 'fm1', throwBy: 'fm1', row: 0, sendTimer: 0, ui: null,
+  kill: 0, killOnBar: store.get('dj-killbar', '0') === '1', filter: 0, filterBy: 'fm1', throwBy: 'fm1', row: 0, cued: null, sendTimer: 0, ui: null,
   level: null, levelSent: 127, levelBusy: false, scr: null, scrLink: null, scrOk: true,
   view: store.get(`dj-view-${i}`, 'screen'), map: null, mapFrom: -1, mapAt: 0, mapFill: null, abSpeed: 0,
   range: pickRange(store.get(`dj-range-${i}`, 800)), rangeChosen: pickRange(store.get(`dj-range-${i}`, 800))}));   /* (rangeChosen: Range's; range widens past it to hold the tempo) */
@@ -229,7 +229,7 @@ function masterPlay() {
   if (c.running) { c.stop(); decks.forEach(d => { if (d.startTimer) cancelStart(d); if (d.clock?.running) d.clock.stop(); }); drawPlay(); return; }
   const at = now() + 60;
   c.start(at);
-  decks.forEach(d => { if (d.key) { if (d.startTimer) cancelStart(d); deckClock(d).setTempo(d.bpm); if (!d.clock.running) d.clock.start(at); } });
+  decks.forEach(d => { if (d.key) { if (d.startTimer) cancelStart(d); deckClock(d).setTempo(d.bpm); if (!d.clock.running) { d.clock.start(at); uncue(d); } } });
   drawPlay();
 }
 /* Play / Stop changed: the decks' PLAY and nudge buttons and the mixer's Play all, not the whole layout */
@@ -283,7 +283,7 @@ async function assign(d, value) {
   d.song = null; d.songRead = null; d.songAt = null; d.songKeys = null;   /* (songAt null: never read) */
   d.presets = null; d.presetsAt = 0; drawPresets(d);
   d.syncTried = null; d.syncSetOnce = false; d.songBpm = null; d.clockOut = null; d.midiKnown = false; d.warn = {}; d.ownRow = null; setWarn(d, 'midi', '');
-  d.level = null; d.levelSent = 127; d.scrOk = true; d.themeAt = 0; d.map = null; d.mapFrom = -1; d.mapFill = null;
+  d.level = null; d.levelSent = 127; d.scrOk = true; d.themeAt = 0; d.map = null; d.mapFrom = -1; d.mapFill = null; d.cued = null;
   paintDeck(d, null);
   if (value) { const [kind, ...k] = value.split(':'); d.kind = kind; d.key = k.join(':'); }
   if (d.kind && d.kind !== 'fm1') d.filterBy = d.throwBy = 'mixer';   /* only an FM-1 has effects of its own */
@@ -337,13 +337,18 @@ const startWhat = () => master.startOn === 'now' ? 'now' : (START_ON.find(s => s
 /* the deck's start, worked out again until it is close (a tempo change meanwhile moves the bar): the clock (its Start
    and first clocks, timed) only from ARM_MS before it, so a cancel before then sends nothing */
 const ARM_MS = 300;
+/* another deck plays, waits to start, or its LSDj plays on its own clock */
+const othersPlay = d => decks.some(o => o !== d && o.key && (o.clock?.running || o.startTimer || (o.ownRow != null && o.live?.bpm)));
 function armStart(d) {
   d.startTimer = 0;
   const c = deckClock(d), t = now();
   if (d.synced) followMaster(d);   /* (the master's tempo; starting on its bar puts the bars together) */
   const r = startRef(d, t);
   let at;
-  if (!r && master.source === 'page') { at = t + 60; if (!masterClock().running) masterClock().start(at); }   /* nothing plays: the master starts with it */
+  /* nothing plays (no other deck playing or about to, its LSDj not on its own clock): at once, and the page's
+     master starts again with it (it runs on after every deck stops; waiting for its next bar was a delay with
+     nothing to line up to). A clock from outside (Clock in) still counts as playing. */
+  if (master.source === 'page' && !othersPlay(d)) { at = t + 60; const m = masterClock(); if (m.running) m.stop(); m.start(at); }
   else {
     const unit = startUnit(master.startOn);
     at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
@@ -355,7 +360,7 @@ function armStart(d) {
   }
   d.startAt = at;
   if (at - t > ARM_MS) d.startTimer = later(at - t - ARM_MS, () => armStart(d));
-  else { c.setTempo(d.bpm); c.start(at); }
+  else { c.setTempo(d.bpm); c.start(at); uncue(d); }
   drawPlay(d);
   void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
@@ -382,7 +387,8 @@ async function djKeys(d, l = hooks.linkFor(d.key)) {
 }
 function djPress(d, k) {
   if (k === 'play' && !d.clock?.running && !d.startTimer) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Play on the FM-1.`); }
-  else if (k === 'stop' && (d.clock?.running || d.startTimer)) { deckPlay(d); say(`Deck ${NAMES[d.i]}: Stop on the FM-1.`); }
+  else if (k === 'stop' && (d.clock?.running || d.startTimer)) { uncue(d); deckPlay(d); say(`Deck ${NAMES[d.i]}: Stop on the FM-1.`); }
+  else if (k === 'stop' && d.cued != null) { const r = d.cued; uncue(d); say(`Deck ${NAMES[d.i]}: row ${hex2(r)} cue cancelled (Stop on the FM-1).`); }   /* (the FM-1 cancelled it) */
 }
 function djLetGo(key) {
   const l = hooks.linkFor(key);
@@ -634,13 +640,21 @@ function abSpeed(d, n) {
   const ch = abCh - 1;
   try { o.send([0x90 | ch, 50 + n, 100]); o.send([0x80 | ch, 50 + n, 0]); } catch (e) { say(`Deck ${NAMES[d.i]}: ${e.message}`); }
 }
-/* a song row cue: program change n on channel 1 (the FM-1 takes any; GLO › MIDI › PC CUE must be ON) */
+/* a song row cue: program change n on channel 1 (the FM-1 takes any; GLO › MIDI › PC CUE must be ON). Playing:
+   that row at the next bar. Stopped (0.9.98-dev.16): play starts on it (d.cued, marked on the map); the same row
+   again cancels it (the FM-1 takes the same program change as a cancel), as does a Stop. */
+const deckStopped = d => !d.clock?.running && !d.startTimer && !d.live?.playing;
+/* the start row gone on the FM-1 (it started, or a Stop): unmarked */
+function uncue(d) { if (d.cued == null) return; d.cued = null; drawMap(d); }
 function cueRow(d) {
   if (d.kind === 'ab') return say(`Deck ${NAMES[d.i]}: an ArduinoBoy can't cue a song row.`);
   const o = deckOut(d);
   if (!o) return;
-  try { o.send([0xC0, d.row & 127]); say(`Deck ${NAMES[d.i]}: row ${d.row.toString(16).toUpperCase().padStart(2, '0')} cued (FM-1: GLO › MIDI › PC CUE on).`); }
-  catch (e) { say(e.message); }
+  const row = d.row & 127, h = hex2(row), stopped = deckStopped(d), cancel = stopped && d.cued === row;
+  try { o.send([0xC0, row]); }
+  catch (e) { return say(e.message); }
+  d.cued = stopped && !cancel ? row : null;
+  say(`Deck ${NAMES[d.i]}: ` + (cancel ? `row ${h} cue cancelled.` : stopped ? `row ${h} cued: Play starts on it (again to cancel; FM-1: GLO › MIDI › PC CUE on).` : `row ${h} cued for the next bar (FM-1: GLO › MIDI › PC CUE on).`));
 }
 /* 0.9.98: the FM-1's volume from this page (VOLUME_SET, times its MASTER knob). v: 0..1, null: full again. The
    latest value goes, one request at a time, so a fast crossfader never queues up. */
@@ -861,6 +875,7 @@ async function poll() {
    and PLAY with it). Only once the FM-1 has played since the deck started (LSDj takes a moment to start on the
    page's Start), and then said twice running (two polls, about 0.8 s) that no channel plays. */
 function fm1Stopped(d) {
+  if (d.live?.playing) uncue(d);   /* (started on the FM-1 itself: its start row used) */
   if (!d.clock?.running) { d.seenPlaying = false; d.idlePolls = 0; return; }
   if (d.live.playing) { d.seenPlaying = true; d.idlePolls = 0; return; }
   if (!d.seenPlaying || ++d.idlePolls < 2) return;
@@ -1290,8 +1305,8 @@ function drawMap(d) {
     const r = d.mapFrom + i, here = chains.map((c, ch) => (playing >> ch) & 1 && at[ch] === r);
     /* a tap cues it; only the map is redrawn (its scroll stays) */
     const b = btn('', () => { d.row = r; cueRow(d); if (u.rowIn) u.rowIn.value = hex2(r); drawMap(d); },
-      {className: `dj-maprow${here.some(Boolean) ? ' here' : ''}${r === d.row ? ' cued' : ''}${chains.every(c => c == null) ? ' empty' : ''}`,
-      disabled: r > 127, title: r > 127 ? 'A program change cues rows 00–7F only' : `Cue row ${hex2(r)}`});
+      {className: `dj-maprow${here.some(Boolean) ? ' here' : ''}${r === d.row ? ' cued' : ''}${r === d.cued ? ' start' : ''}${chains.every(c => c == null) ? ' empty' : ''}`,
+      disabled: r > 127, title: r > 127 ? 'A program change cues rows 00–7F only' : r === d.cued ? `Play starts on row ${hex2(r)} (click again to cancel)` : `Cue row ${hex2(r)}`});
     b.append(el('b', {textContent: hex2(r)}), ...chains.map((c, ch) => el('span', {className: here[ch] ? 'on' : '', textContent: c == null ? '--' : hex2(c)})));
     return b;
   }));

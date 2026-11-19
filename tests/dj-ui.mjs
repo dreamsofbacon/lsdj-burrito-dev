@@ -469,6 +469,26 @@ export async function runDjUiTests() {
     B.midi.length = 0;
     rowsShown[2].click();
     assert(B.midi.some(m => m[0] === 0xc0 && m[1] === 2), `a click on row 02 cues it (program change 2): ${B.midi}`);
+    {   /* 0.9.98-dev.16, stopped: the start row, marked; the same row again cancels (the program change again); another
+           row replaces it; Play starts and unmarks it */
+      const playB = () => decksEl[1].querySelector('.dj-play'), rowEl = i => decksEl[1].querySelectorAll('.dj-maprow')[i];
+      const wasPlaying = playB().classList.contains('on');
+      assert(wasPlaying ? !rowEl(2).classList.contains('start') : rowEl(2).classList.contains('start'), `the click: playing, cued for the next bar; stopped, the start row (${wasPlaying})`);
+      if (wasPlaying) { playB().click(); await until(() => !playB().classList.contains('on'), 'B stopped for the start-row checks', 4000); }
+      B.midi.length = 0; rowEl(2).click();
+      assert(B.midi.some(m => m[0] === 0xc0 && m[1] === 2), `stopped: a click on row 02 cues it: ${B.midi}`);
+      assert(rowEl(2).classList.contains('start') && /Play starts on row 02/.test(rowEl(2).title), `stopped: row 02 marked as the start row: ${rowEl(2).className}`);
+      B.midi.length = 0; rowEl(2).click();
+      assert(B.midi.filter(m => m[0] === 0xc0 && m[1] === 2).length === 1 && !rowEl(2).classList.contains('start'), `row 02 again: the program change again, unmarked: ${B.midi}`);
+      rowEl(1).click(); rowEl(3).click();
+      assert(rowEl(3).classList.contains('start') && !rowEl(1).classList.contains('start'), 'row 01 then row 03: 03 the start row');
+      playB().click();
+      await until(() => playB().classList.contains('on'), 'B plays', 4000);
+      assert(!decksEl[1].querySelector('.dj-maprow.start'), 'Play: the start row unmarked');
+      B.midi.length = 0; rowEl(3).click();
+      assert(B.midi.some(m => m[0] === 0xc0 && m[1] === 3) && !rowEl(3).classList.contains('start'), 'playing: a click cues the next bar, not a start row');
+      if (!wasPlaying) { playB().click(); await until(() => !playB().classList.contains('on'), 'B stopped again', 4000); }
+    }
     viewBtn(decksEl[1], 'Screen').click();
     const reads = B.mapReads.length, shots = B.screens;
     await sleep(1200);
