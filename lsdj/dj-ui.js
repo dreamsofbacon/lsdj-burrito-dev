@@ -1018,7 +1018,7 @@ function setXfader(v) {
   const fm1s = decks.filter(d => d.kind === 'fm1');
   mixer.note = hooks.hearing() ? 'The crossfader mixes the FM-1s\' sound on this computer (Hear it here); the FM-1s stay at full volume.'
     : mixer.id === 'none'
-    ? (fm1s.length && fm1s.every(d => fwOf(d) >= 998) ? 'Without a MIDI mixer the crossfader sets each FM-1\'s volume (times its MASTER knob).'
+    ? (fm1s.length && fm1s.every(d => fwOf(d) >= 998) ? 'Without a MIDI mixer the crossfader sets each FM-1\'s volume (times its MASTER knob), its USB sound too.'
       : 'Without a MIDI mixer the crossfader sets each FM-1\'s volume: that needs 0.9.98 on the FM-1s.')
     : sent ? '' : 'This mixer doesn\'t take its volumes from the page: the crossfader shows here only.';
   mixerNumbers();   /* (dragged: the numbers only, never the slider itself) */
@@ -1085,11 +1085,14 @@ function stepBtn(text, dir, step, props = {}) {
   const r = repeater(step);
   return pressBtn(text, () => r.press(dir), () => r.release(), props);
 }
+/* Put away for now (2026-11-19, to come back as a future feature): the ArduinoBoy deck, not yet tried on a Game
+   Boy. Offered only with ?arduinoboy in the address, or djFuture.arduinoBoy (the tests); its code stays as it is. */
+export const djFuture = {arduinoBoy: (() => { try { return new URLSearchParams(location.search).has('arduinoboy'); } catch { return false; } })()};
 function deckChoices() {
   const fm1s = hooks.devices().map(d => [`fm1:${d.key}`, d.label]);
   const fm1Outs = new Set(hooks.devices().map(d => hooks.outputFor(d.key)?.id));
   const gear = mixerPorts().outs.filter(p => !fm1Outs.has(p.id) && p.id !== mixer.outId)
-    .flatMap(p => [[`gear:${p.id}`, `${p.name} (MIDI)`], [`ab:${p.id}`, `${p.name} (ArduinoBoy)`]]);
+    .flatMap(p => [[`gear:${p.id}`, `${p.name} (MIDI)`], ...(djFuture.arduinoBoy ? [[`ab:${p.id}`, `${p.name} (ArduinoBoy)`]] : [])]);
   return [['', 'Empty'], ...fm1s, ...gear];
 }
 /* a deck, laid out as a CDJ (index.html .dj-deck):

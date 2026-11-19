@@ -39,6 +39,8 @@ const hear = new Hear(globalThis, {   // Hear it here (below): the FM-1's USB so
   get: port => { try { return localStorage.getItem('lsdj-burrito-hear-in:' + port); } catch { return null; } },
   set: (port, id) => { try { if (id) localStorage.setItem('lsdj-burrito-hear-in:' + port, id); else localStorage.removeItem('lsdj-burrito-hear-in:' + port); } catch { /* this visit only */ } }});
 let hearOn = false, hearVol = 1, djHear = [], hearReady = false;
+/* Hear it here is put away for now (2026-11-19): shown only with ?hear in the address, for trying it */
+const HEAR_SHOWN = (() => { try { return new URLSearchParams(location.search).has('hear'); } catch { return false; } })();
 const enable = on => {
   ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'].forEach(id => $(id).setAttribute('aria-disabled', on ? 'false' : 'true'));
   presetsShown(on && hasPresets);
@@ -1418,7 +1420,7 @@ setCrateHooks({
    Effects: the FM-1 in use at this volume. DJ: each deck's FM-1 at its crossfader share (dj-ui.js hearLevels) times
    this volume, the FM-1s themselves at full volume meanwhile. Kept in this browser. */
 try {
-  hearOn = localStorage.getItem('lsdj-burrito-hear') === '1';
+  hearOn = HEAR_SHOWN && localStorage.getItem('lsdj-burrito-hear') === '1';
   const v = localStorage.getItem('lsdj-burrito-hear-vol'); if (v !== null) hearVol = Math.max(0, Math.min(1, +v || 0));
 } catch { /* off, full */ }
 function syncHear() {
@@ -1430,7 +1432,7 @@ function syncHear() {
   drawHear();
 }
 function drawHear() {
-  $('hear-box').hidden = !hear.supported;
+  $('hear-box').hidden = !HEAR_SHOWN || !hear.supported;
   const b = $('hear-btn'), key = connected && !virtual && stageMode !== 'dj' ? curKey() : null;
   b.setAttribute('aria-pressed', String(hearOn)); b.classList.toggle('on', hearOn);
   $('hear-vol').hidden = !hearOn;

@@ -6,7 +6,7 @@
 //   the DJ filter sets all four channels' filters; Perform › Clock goes off; the TX-6 preset: a track button
 //   starts / stops its deck, the crossfader sets its two channel volumes (CC 7).
 import {OP, crc32} from '../lsdj/link.js';
-import {djState, rememberSav, readSongAgain} from '../lsdj/dj-ui.js';
+import {djState, rememberSav, readSongAgain, djFuture} from '../lsdj/dj-ui.js';
 import {addToCrate, setCrateHooks} from '../lsdj/crate-ui.js';
 import {dataCrcOf} from '../lsdj/cartridges.js';
 import {listKits} from '../lsdj/lsdj-rom.js';
@@ -656,8 +656,13 @@ export async function runDjUiTests() {
     await until(() => B.level === 127, `the Effects layout: B at full volume: ${B.levels}`);
 
     // 7. an ArduinoBoy deck: listed for each MIDI output; normal speed at the start; the speed notes on channel 16;
-    //    the clock, Start and Stop; the FM-1-only controls hidden; no row cue
+    //    the clock, Start and Stop; the FM-1-only controls hidden; no row cue. Put away for now: not offered unless
+    //    djFuture.arduinoBoy (?arduinoboy), so it is checked hidden first, then turned on for the rest
     document.querySelector('#stage-mode [data-mode="dj"]').click();
+    await until(() => [...pickA.options].some(o => o.value === 'gear:ab-out'), `the MIDI choice: ${[...pickA.options].map(o => o.value)}`);
+    assert(![...pickA.options].some(o => o.value.startsWith('ab:')), 'no ArduinoBoy deck offered (put away for now)');
+    djFuture.arduinoBoy = true;
+    document.querySelector('#stage-mode [data-mode="fx"]').click(); document.querySelector('#stage-mode [data-mode="dj"]').click();
     await until(() => [...pickA.options].some(o => o.value === 'ab:ab-out'), `the ArduinoBoy choice: ${[...pickA.options].map(o => o.value)}`);
     choose(pickA, 'ab:ab-out');
     const deckA = [...document.querySelectorAll('.dj-deck')][0], dA = djState().decks[0];
@@ -680,6 +685,7 @@ export async function runDjUiTests() {
     assert(AB.sent.at(-1)[0] === 0xfc, `Stop: ${AB.sent.at(-1)}`);
     choose(pickA, '');
     try { localStorage.removeItem('dj-ab-ch'); } catch {}
+    djFuture.arduinoBoy = false;
 
     // 8. the crate: a .sav loads onto deck A's FM-1 while deck B plays on (its clocks keep coming, nothing else goes
     //    to it). Never the browser's confirm() (it stops the page, and B's clock: Colin's test): Load asks on the card,
