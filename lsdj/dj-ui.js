@@ -1612,7 +1612,7 @@ async function deckMidi(d, l) {
   } catch (e) { d.ccFx = 0; setWarn(d, 'midi', `The FM-1's MIDI settings couldn't be set (${e.message}): GLO › MIDI › CLOCK IN = ALL, TRANSPORT ON, PC CUE ON, CC FX on.`); }   /* (kills: the whole mask then) */
 }
 /* LSDj's SYNC, each poll (LIVE, 0.9.98): set to KEYBD while LSDj is stopped (0.9.98-dev.2 SYNC_SET), once a value;
-   SYNC = LSDJ with CLOCK OUT on is left (that FM-1 leads: choose it as the master clock) */
+   SYNC = LSDJ too (2026-11-19); only the master clock's own FM-1 is never changed (to lead, choose it as the master clock) */
 /* this deck's FM-1 is the one the master clock comes from (Master › Clock from its input) */
 const isMasterFm1 = d => master.source !== 'page' && hooks.linkFor(d.key)?.input?.id === master.source;
 async function lsdjSync(d, l) {
@@ -1625,11 +1625,10 @@ async function lsdjSync(d, l) {
      to the other deck (Colin). The master clock's own FM-1 is never changed. */
   if (!d.midiKnown) return;
   const master_ = isMasterFm1(d);
-  if (s === 'lsdj' && (d.clockOut !== false || master_)) {
-    return setWarn(d, 'sync', master_ ? (d.clockOut === false ? 'This FM-1 is the master clock, but its CLOCK OUT is off: set GLO › MIDI › CLOCK OUT = USB.' : '')
-      : 'LSDj SYNC is LSDJ with CLOCK OUT on: this FM-1 leads, so it won\'t follow this deck. Choose it as the master clock, or set SYNC = KEYBD.');
-  }
-  if (master_) return;
+  /* SYNC = LSDJ (with CLOCK OUT on or off) on a deck's FM-1 that isn't the master clock: set to KEYBD like the rest,
+     so it follows the deck (Colin, 2026-11-19: "SYNC is LSDJ with CLOCK OUT on, so it won't follow the deck"). An FM-1
+     meant to lead is chosen as the master clock (Master › Clock), and that one is never changed. */
+  if (master_) return setWarn(d, 'sync', s === 'lsdj' && d.clockOut === false ? 'This FM-1 is the master clock, but its CLOCK OUT is off: set GLO › MIDI › CLOCK OUT = USB.' : '');
   if (d.clock?.running || d.live.playing) return;   /* (playing: MIDI is the FM-1's own switch, back after Stop) */
   if (d.syncTried === s) return;
   d.syncTried = s;
@@ -1641,7 +1640,8 @@ async function lsdjSync(d, l) {
     setWarn(d, 'sync', '');
     say(`Deck ${NAMES[d.i]}: set LSDj's SYNC from ${SYNC_NAME[s]} to KEYBD ` + (d.syncSetOnce
       ? `again: the song LSDj has open now keeps its own SYNC (a song sent or opened brings it back).`
-      : `(the FM-1 switches it to MIDI while this page plays it).`));
+      : `(the FM-1 switches it to MIDI while this page plays it).`) +
+      (s === 'lsdj' && d.clockOut ? ' To have this FM-1 lead the others instead, choose it as the master clock.' : ''));
     d.syncSetOnce = true;
   }
   else if (r === 'playing') d.syncTried = null;   /* (next poll) */

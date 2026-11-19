@@ -853,29 +853,32 @@ export async function runDjUiTests() {
     assert(B.syncSets.length === 1 && B.midiSets.length === 1 && warnB().hidden, `once each, no warning: ${B.syncSets} ${B.midiSets.length} ${warnB().textContent}`);
     const logB = logNow();
     assert(/Deck B: set the FM-1's CLOCK IN to ALL, TRANSPORT ON, PC CUE ON/.test(logB) && /Deck B: set LSDj's SYNC from MIDI to KEYBD/.test(logB), `logged: ${logB.slice(-400)}`);
-    /* SYNC = LSDJ with CLOCK OUT on: that FM-1 leads; left as it is, said on the strip */
+    /* SYNC = LSDJ with CLOCK OUT on, on a deck's FM-1 that isn't the master clock: set to KEYBD too, so it follows
+       the deck (Colin, 2026-11-19); the Log says how to have it lead instead (the master clock) */
     B.sync = 1;
-    await until(() => !warnB().hidden && /CLOCK OUT on/.test(warnB().textContent), `LSDJ + CLOCK OUT: the warning: ${warnB().textContent}`, 3000);
-    assert(B.syncSets.length === 1, 'LSDJ with CLOCK OUT on: not changed');
-    /* a leading FM-1 (SYNC = LSDJ, CLOCK OUT on) taken by a deck while its MIDI settings come back late: its SYNC is
-       never touched before they're known (it was set to KEYBD, and stopped sending its clock: Colin) */
+    await until(() => B.syncSets.length === 2 && B.sync === 5, `LSDJ + CLOCK OUT, not the master: SYNC to KEYBD: ${B.syncSets}`, 4000);
+    assert(warnB().hidden && /set LSDj's SYNC from LSDJ to KEYBD[^]*choose it as the master clock/.test(logNow()), `no warning, the Log says how to lead: ${warnB().textContent} | ${logNow().slice(-300)}`);
+    /* an FM-1 (SYNC = LSDJ, CLOCK OUT on) taken by a deck while its MIDI settings come back late: its SYNC is never
+       touched before they're known (it once was set on a poll before them: Colin), then set like any other */
     B.midiWord = (0x4D000000 | 1 | 8 | 1 << 11 | 1 << 15 | 1 << 17) >>> 0; B.slow = {[OP.SETTINGS_GET]: 1200}; B.sync = 1;   /* (its colours read late: the deck's polls come in before its MIDI settings are read) */
     choose(pickB, ''); choose(pickB, 'fm1:out-2');
-    await sleep(2500);
-    assert(B.syncSets.length === 1 && B.sync === 1, `a leading FM-1 taken by a deck, its settings late: SYNC left LSDJ: ${B.syncSets} (${B.sync})`);
+    await sleep(600);
+    assert(B.syncSets.length === 2 && B.sync === 1, `its settings late: SYNC not touched before they're known: ${B.syncSets} (${B.sync})`);
+    await until(() => B.syncSets.length === 3 && B.sync === 5, `then set to KEYBD: ${B.syncSets}`, 5000);
     B.slow = null;
     /* the master clock's own FM-1: never changed, even with CLOCK OUT off; the strip says to turn CLOCK OUT on */
-    B.midiWord = (0x4D000000 | 1 | 8 | 1 << 11 | 1 << 17) >>> 0;
+    B.midiWord = (0x4D000000 | 1 | 8 | 1 << 11 | 1 << 17) >>> 0; B.sync = 1;
+    const setsBefore = B.syncSets.length;
     choose(document.querySelector('.dj-master select[aria-label="Master clock"]'), 'in-2');
     choose(pickB, ''); choose(pickB, 'fm1:out-2');
     await until(() => !warnB().hidden && /master clock, but its CLOCK OUT is off/.test(warnB().textContent), `the master's FM-1, CLOCK OUT off: the strip: ${warnB().textContent}`, 4000);
-    assert(B.syncSets.length === 1 && B.sync === 1, `the master clock's FM-1: SYNC left LSDJ: ${B.syncSets}`);
+    assert(B.syncSets.length === setsBefore && B.sync === 1, `the master clock's FM-1: SYNC left LSDJ: ${B.syncSets}`);
     choose(document.querySelector('.dj-master select[aria-label="Master clock"]'), 'page');
     /* 0.9.98-dev.1 (no SYNC_SET) with SYNC = MIDI: nothing set, the strip says how */
     B.dev2 = false; B.sync = 3; B.midiWord = (0x4D000000 | 1 | 8 | 1 << 11 | 1 << 17) >>> 0;
     choose(pickB, ''); choose(pickB, 'fm1:out-2');
     await until(() => !warnB().hidden && /SYNC is MIDI: set it to KEYBD/.test(warnB().textContent), `dev.1, SYNC MIDI: the warning: ${warnB().textContent}`, 3000);
-    assert(B.syncSets.length === 1 && B.midiSets.length === 1, 'dev.1: nothing more sent');
+    assert(B.syncSets.length === setsBefore && B.midiSets.length === 1, 'dev.1: nothing more sent');
     /* fixed by hand on LSDj: the strip goes */
     B.sync = 5;
     await until(() => warnB().hidden, 'SYNC KEYBD: the strip goes', 3000);
