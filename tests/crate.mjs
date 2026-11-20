@@ -123,6 +123,7 @@ assert.equal(describe({sav: S2}, id => lib[id]).missing, true);
   const titled = old.slice(); [...'LSDj-v7.1.0'].forEach((c, i) => titled[0x134 + i] = c.charCodeAt(0));
   assert.equal(formatOfTitle('LSDj-v7.1.0', [titled]), 4, 'from an LSDj file of that title');
   assert.equal(formatOfTitle('LSDj-v1.0.0', [titled]), null);
+  assert.equal(formatOfTitle('LSDj-v9.1.4'), 19, 'from its version (lsdj-sets.js formatOfVersion)');
 }
 /* straight into a chosen song: that song in the working area, opened; the saved songs untouched */
 {

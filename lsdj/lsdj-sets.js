@@ -55,6 +55,32 @@ export function lsdjFormat(rom) {
   }
   return null;
 }
+/* the first LSDj that writes each song format, so the oldest that opens a song of it (the dev.18 page): measured with
+   lsdjFormat on every LSDj build on littlesounddj.com (671 files; 4.4 to 5.6 write theirs another way, not found).
+   A .sav doesn't say which LSDj saved it, only this: "needs LSDj 9.2.1 or newer". */
+export const FORMAT_FIRST = {2: '4.2.9', 4: '5.7.0', 5: '6.3.0', 7: '6.8.0', 8: '7.1.0', 9: '7.4.4', 10: '7.9.8', 11: '8.1.0',
+  12: '8.6.0', 13: '8.8.0', 14: '8.8.1', 15: '8.8.6', 16: '8.8.8', 17: '8.9.3', 18: '9.0.0', 19: '9.1.0', 20: '9.1.5', 21: '9.2.0', 22: '9.2.1'};
+/* the oldest LSDj that opens a song format, as text ("9.2.1"). A format no measured build writes: the next one's
+   first LSDj (it opens it); past the table: 'newer' (an LSDj after 9.4.2); null: unknown */
+export function firstLsdjFor(format) {
+  if (!Number.isInteger(format) || format < 0) return null;
+  const known = Object.keys(FORMAT_FIRST).map(Number).sort((a, b) => a - b);
+  const next = known.find(k => k >= format);
+  return next == null ? 'newer' : FORMAT_FIRST[next];
+}
+/* the song format an LSDj version writes, from its version alone ([9, 1, 4] -> 20): only from 5.7.0 on (older
+   builds were not all found) and up to 9.4.2 (the newest measured); else null */
+export function formatOfVersion(v) {
+  if (!v || compareVersions(v, [5, 7, 0]) < 0 || compareVersions(v, [9, 4, 2]) > 0) return null;
+  let best = null;
+  for (const [f, first] of Object.entries(FORMAT_FIRST)) if (compareVersions(v, first.split('.').map(Number)) >= 0) best = Math.max(best ?? 0, +f);
+  return best;
+}
+/* "LSDj 9.2.1 or newer" (null: unknown) */
+export function needsText(format) {
+  const v = firstLsdjFor(format);
+  return v == null ? null : v === 'newer' ? `an LSDj newer than 9.4.2 (song format ${format})` : `LSDj ${v} or newer`;
+}
 /* whether an LSDj (its format) opens a song (its format): unknown either way counts as yes (nothing to go on) */
 export const opens = (lsdjFmt, songFmt) => lsdjFmt == null || songFmt == null || songFmt <= lsdjFmt;
 export const compareVersions = (a, b) => { for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0); return 0; };

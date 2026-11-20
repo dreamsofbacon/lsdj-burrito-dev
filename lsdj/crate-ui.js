@@ -6,7 +6,7 @@
 import {KEY, fileKind, loadItems, saveItems, addItem, removeItem, renameItem, pairItems, unusedSaves, describe,
   recolorItem, setImage, unusedImages, moveItem, viewItems, formatOfTitle} from './crate.js';
 import {labelEditor, paintLabel, shrinkImage, imageUrl, isHex} from './cart-label.js';
-import {opens} from './lsdj-sets.js';
+import {opens, needsText} from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary} from './kit-library.js';
 import {listKits, crc32, planRom} from './lsdj-rom.js';
 import {withOpenSong, savBody, splitSav, HEADER, HEADER_SIZE} from './lsdj-sav.js';
@@ -394,6 +394,9 @@ function askLoad(id, i, slot = null) {
   }, () => {});
 }
 /* the songs (all, or the one chosen) its FM-1's LSDj can't open: saved by a newer LSDj */
+/* what the songs named need, at least (the newest format among them): "LSDj 9.2.1 or newer" (the dev.18 page) */
+const needsOf = (t, names) => needsText(Math.max(-1, ...t.songList.filter(x => names.includes(x.name)).map(x => x.format ?? -1)));
+const fm1Lsdj = title => String(title || '').replace(/^LSDj-v/, 'LSDj ');
 const tooNewFor = (t, fm1, slot) => fm1?.format == null ? [] : t.songList.filter(x => (slot == null || x.slot === slot) && !opens(fm1.format, x.format)).map(x => x.name);
 
 /* the deck holding a card's .sav now: the .sav this page last sent to its FM-1 (dj-ui.js held(i): its checksum, while
@@ -445,8 +448,8 @@ function askBox(item, t) {
     el('p', {textContent: what}),
     el('p', {className: 'hint', textContent: `Deck ${d?.name} stops; the other keeps playing.` + (install ? ' Experimental firmware: keep the cable in.' : '') +
       (heldBy(item, t).includes(d?.name) ? '' : ' Grab its songs first to keep them.')}),
-    (() => { const n = item.rom ? t.tooNew : tooNewFor(t, asking.fm1, asking.slot), lsdj = item.rom ? `This card's LSDj (${t.version})` : `Deck ${d?.name}'s FM-1 runs ${asking.fm1?.title}, which`;
-      return n.length ? el('p', {className: 'warn crate-needs', textContent: `${lsdj} can't open ${n.join(', ')}: saved by a newer LSDj. Load an LSDj that can (a cart made with it, or its .gb) first.`}) : null; })(),
+    (() => { const n = item.rom ? t.tooNew : tooNewFor(t, asking.fm1, asking.slot), lsdj = item.rom ? `This card's LSDj (${t.version})` : `Deck ${d?.name}'s FM-1 runs ${fm1Lsdj(asking.fm1?.title)}, which`, need = n.length && needsOf(t, n);
+      return n.length ? el('p', {className: 'warn crate-needs', textContent: `${lsdj} can't open ${n.join(', ')}: saved by a newer LSDj${need ? `; ${n.length === 1 ? 'it needs' : 'they need'} ${need}` : ''}. Load an LSDj that can (a cart made with it, or its .gb) first.`}) : null; })(),
     /* can't tell (an LSDj or songs whose format the page doesn't know): said, not taken as fine (the cartridge plan) */
     (() => { if (!item.sav) return null;
       const lsdjFmt = item.rom ? t.format : asking.fm1 ? asking.fm1.format : undefined, songs = t.songList.filter(x => asking.slot == null || x.slot === asking.slot);
@@ -466,7 +469,8 @@ function songRow(item, t, s, withCard = false) {
   const on = heldBy(item, t, s.slot);
   return el('li', {className: `crate-song${on.length ? ' on-deck' : ''}`},
     withCard ? el('span', {className: 'crate-song-card', title: item.name}, el('i', {className: 'crate-dot', style: isHex(item.color) ? `background:${item.color}` : ''}), item.name) : null,
-    el('span', {className: 'crate-song-name', textContent: s.name}),
+    el('span', {className: 'crate-song-name', textContent: s.name, title: needsText(s.format) ? `Needs ${needsText(s.format)} (song format ${s.format})` : ''}),
+    t.tooNew.includes(s.name) ? el('small', {className: 'warn', textContent: `needs ${needsText(s.format)?.replace(/ or newer$/, '+') ?? 'a newer LSDj'}`}) : null,
     el('small', {textContent: `${s.blocks} blk${t.open === s.slot ? ' · open' : ''}`}),
     ...on.map(n => el('span', {className: 'crate-on', textContent: `ON ${n}`})),
     el('span', {className: 'crate-song-acts'}, ...fm1Decks().map(d => loadBtn(item, d, t, s.slot, d.name))),
@@ -485,7 +489,9 @@ function card(item, reorder) {
   const name = el('input', {type: 'text', value: item.name, className: 'crate-name', maxLength: 60,
     onchange: () => { items = renameItem(items, item.id, name.value.trim()); save(); }});
   name.setAttribute('aria-label', 'Name');
-  const meta = [t.version ? `LSDj ${t.version}` : null, item.sav ? (t.missing ? 'file missing' : `${t.songs.length} song${t.songs.length === 1 ? '' : 's'}`) : 'no songs'].filter(Boolean).join(' · ');
+  const needs = item.sav && !t.missing ? needsText(t.needs) : null;
+  const meta = [t.version ? `LSDj ${t.version}` : null, item.sav ? (t.missing ? 'file missing' : `${t.songs.length} song${t.songs.length === 1 ? '' : 's'}`) : 'no songs',
+    needs ? `needs ${needs.replace(/ or newer$/, '+')}` : null].filter(Boolean).join(' · ');
   const noLsdj = !item.rom && item.sav;
   const romBytes = item.rom && bytesOf(item.rom), tooBig = !!(romBytes && !fitsNow(romBytes, item.rom));
   const canPair = pairFrom && pairFrom !== item.id && (() => { const o = items.find(x => x.id === pairFrom); return o && !!o.rom !== !!item.rom && !!o.sav !== !!item.sav; })();
@@ -525,7 +531,7 @@ function card(item, reorder) {
         ...on.map(n => el('span', {className: 'crate-on', textContent: `ON ${n}`, title: `Deck ${n}'s FM-1 has these songs now`}))),
       name,
       el('p', {className: 'crate-meta', textContent: meta, title: t.songs.join(', ')}),
-      t.tooNew.length ? el('p', {className: 'crate-needs', textContent: `LSDj ${t.version} can't open ${t.tooNew.join(', ')} (saved by a newer LSDj)`}) : null,
+      t.tooNew.length ? el('p', {className: 'crate-needs', textContent: `LSDj ${t.version} can't open ${t.tooNew.join(', ')} (saved by a newer LSDj${needsOf(t, t.tooNew) ? `: needs ${needsOf(t, t.tooNew)}` : ''})`}) : null,
       noLsdj ? el('p', {className: 'crate-needs', textContent: 'No LSDj: not a whole cartridge. Choose its LSDj.'}) : null,
       tooBig ? el('p', {className: 'crate-needs', textContent: item.sav ? 'Too big for the FM-1 with all its kits: press Make it fit.' : 'Too big for the FM-1 with all its kits: install it from Install, leaving kits out.'}) : null,
       editor),

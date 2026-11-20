@@ -48,6 +48,21 @@ export async function runCrateCompleteUiTests() {
     assert(alone.rom === fri.rom && alone.sav, 'with the LSDj chosen');
     assert(!items().some(i => !i.rom), 'no card without an LSDj');
 
+    /* what a .sav needs (the dev.18 page): an LSDj too old for its songs goes last in the chooser, marked, and isn't
+       picked; the card says what its songs need */
+    const old = lsdj('7.1.0', []); old.set([0x3e, 4, 0xf5, 0x33, 0x21, 0xff, 0xbf, 0xe5, 0x3e, 0x03, 0xf5, 0x33, 0xcd], 0x7000);   /* writes format 4 */
+    const fmt = (b, f) => { const s = song(9); s[0x7fff] = f; const x = new Uint8Array(SAV_SIZE); x[0x813e] = 0x6a; x[0x813f] = 0x6b; return buildSav(x, s, [{slot: 0, name: b, song: s}], 0); };
+    await pick([[old, 'Oldie.gb'], [fmt('OLDSONG', 4), 'Oldie.sav']]);
+    await until(() => card('Oldie'), 'Oldie drawn');
+    assert(/needs LSDj 5\.7\.0\+/.test(card('Oldie').textContent), `Oldie says what it needs: ${card('Oldie').textContent}`);
+    done = pick([[fmt('NEWSONG', 22), 'New.sav']]);
+    await until(() => dialog()?.querySelectorAll('input[type=radio]').length >= 2, 'both LSDj listed');
+    const rows = [...dialog().querySelectorAll('.choose-row')];
+    assert(/These songs need LSDj 9\.2\.1 or newer/.test(dialog().textContent), `the need said: ${dialog().textContent}`);
+    assert(/7\.1\.0 · too old for these songs \(they need LSDj 9\.2\.1 or newer\)/.test(rows.at(-1).textContent), `the old one last, marked: ${rows.map(r => r.textContent)}`);
+    assert(!rows.at(-1).querySelector('input').checked && rows[0].querySelector('input').checked, 'one that opens them picked');
+    press(dialog(), 'Cancel'); await done;
+
     /* an LSDj too big for the FM-1 with all its kits: the card's is made to fit, only the kit its song plays */
     const cap = (await (await fetch('lsdj/template.json')).json()).cartridge_capacity;
     const big = lsdj('9.3.9', Array.from({length: 8}, (_, k) => kitOf(`K${k}`, [480, 480], true, k + 1)));
@@ -69,7 +84,7 @@ export async function runCrateCompleteUiTests() {
     press(crate, 'Export cartridges');
     await until(() => clicks.includes('lsdj-cartridges.zip'), `the export: ${clicks}`);
     assert(/Exported \d+ cartridges/.test(crate.querySelector('.crate-status').textContent), `said: ${crate.querySelector('.crate-status').textContent}`);
-    return 'PASS whole cartridges: an LSDj and .sav of one name make one card, a .sav alone asks for its LSDj (Cancel: none), a card downloads as .gb + .sav, Export cartridges';
+    return 'PASS whole cartridges: an LSDj and .sav of one name make one card, a .sav alone asks for its LSDj (Cancel: none), what a .sav needs (the card, an LSDj too old listed last), a card downloads as .gb + .sav, Export cartridges';
   } finally {
     HTMLAnchorElement.prototype.click = realClick;
     dialog()?.remove();

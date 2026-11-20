@@ -5,7 +5,7 @@
 // as 'sav'), each once. Never uploaded, never in the offline copy.
 import {parseSav, savBody, songBytes, SAV_SIZE} from './lsdj-sav.js';
 import {validateRom, listKits, crc32} from './lsdj-rom.js';
-import {lsdjVersion, versionText, lsdjLabel, lsdjFormat, songFormat, opens} from './lsdj-sets.js';
+import {lsdjVersion, versionText, lsdjLabel, lsdjFormat, songFormat, opens, formatOfVersion} from './lsdj-sets.js';
 
 export const KEY = 'dj-crate';
 
@@ -112,11 +112,13 @@ export function describe(item, bytesOf) {
 }
 
 /* an LSDj's song format from its title, when only the title is known (an FM-1's INFO): from an LSDj file of that title,
-   else the ones measured (lsdj-sets.js songFormat) */
+   else the ones measured (lsdj-sets.js songFormat), else from its version number (lsdj-sets.js formatOfVersion, the dev.18 page) */
 const KNOWN_FORMATS = {'LSDj-v9.3.9': 22, 'LSDj-v9.4.0': 22, 'LSDj-v9.4.2': 22, 'LSDj-v5.7.8': 4};   /* (9.4.x: format 22, lsdj-sets.js lsdjFormat) */
 const titleText = t => String(t || '').replace(/[\u0000 ]+$/, '');
 export function formatOfTitle(title, roms = []) {
   const t = titleText(title);
   for (const r of roms) if (titleText(String.fromCharCode(...r.subarray(0x134, 0x144))) === t) { const f = lsdjFormat(r); if (f != null) return f; }
-  return KNOWN_FORMATS[t] ?? null;
+  if (KNOWN_FORMATS[t] != null) return KNOWN_FORMATS[t];
+  const m = /v?(\d+)\.(\d+)\.(\d+)/.exec(t);
+  return m ? formatOfVersion([+m[1], +m[2], +m[3]]) : null;
 }

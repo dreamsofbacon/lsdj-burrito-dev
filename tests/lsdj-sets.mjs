@@ -182,4 +182,23 @@ const tight = {...roomy, capacity: sizeOf(all) - 1};
   assert.ok(built.warnings.some(w => /older/.test(w)));
   assert.equal(built.rom[kitSlots(built.rom)[0].bank * BANK + 0x5f], 0);   /* frames for the old LSDj */
 }
+/* song formats -> the oldest LSDj that opens them (the dev.18 page), and back from a version */
+{
+  assert.equal(S.firstLsdjFor(22), '9.2.1');
+  assert.equal(S.firstLsdjFor(21), '9.2.0');
+  assert.equal(S.firstLsdjFor(4), '5.7.0');
+  assert.equal(S.firstLsdjFor(6), '6.8.0', 'a format no build writes: the first LSDj of the next one opens it');
+  assert.equal(S.firstLsdjFor(23), 'newer');
+  assert.equal(S.firstLsdjFor(null), null);
+  assert.equal(S.needsText(22), 'LSDj 9.2.1 or newer');
+  assert.equal(S.needsText(23), 'an LSDj newer than 9.4.2 (song format 23)');
+  assert.equal(S.needsText(null), null);
+  assert.equal(S.formatOfVersion([9, 1, 4]), 19);
+  assert.equal(S.formatOfVersion([9, 1, 5]), 20);
+  assert.equal(S.formatOfVersion([9, 3, 9]), 22);
+  assert.equal(S.formatOfVersion([5, 7, 8]), 4);
+  assert.equal(S.formatOfVersion([5, 6, 0]), null, 'before 5.7.0: not all found');
+  assert.equal(S.formatOfVersion([9, 5, 0]), null, 'after 9.4.2: not measured');
+  for (const [f, v] of Object.entries(S.FORMAT_FIRST)) if (+f >= 4) assert.equal(S.formatOfVersion(v.split('.').map(Number)), +f, v);
+}
 console.log('lsdj-sets: ok');
