@@ -3,7 +3,8 @@
 // the file is checked whole before anything is sent; the install only starts
 // with this tab in front, keeps the screen awake, warns if the tab is hidden
 // or closed meanwhile. Recovery after an interrupted write is not guaranteed.
-import {checkPackage, install, InstallError, REPLUG} from './install.js';
+import {checkPackage, install, installOn, InstallError, REPLUG} from './install.js';
+import {chooseFm1} from './choose-fm1.js';
 
 const $ = (id) => document.getElementById(id);
 const say = (text, cls = 'hint') => { const el = $('fw-status'); el.textContent = text; el.className = cls; };
@@ -43,6 +44,10 @@ export function setInstallTarget(key) {
 export const installing = () => busy || target !== null;
 export let beforeInstall = async () => {};   // the page closes its own link to the FM-1 first (app.js sets it)
 export function setBeforeInstall(f) { beforeInstall = f; }
+/* the FM-1s plugged in (app.js): list() -> [{key, no, title, firmware, inUse}]; identify(key, no, s); use(key): the page
+   connects to that one (Install's LSDj copy reads the FM-1 in use); ports(key) / otherPorts(key) as the DJ crate's */
+let fm1Hooks = null;
+export function setInstallFm1s(h) { fm1Hooks = h; }
 
 function clearFirmware() {
   ++selection; pkg = null; generated = false; firmwareBytes = null; fileName = ''; swapSlot = null; swapBuild = null;
@@ -104,9 +109,24 @@ $('fw-install').onclick = async () => {
   if (unavailable) return say(unavailable + ' Nothing was installed.', 'warn');
   if (document.hidden) return say('Bring this tab to the front first.', 'warn');
   if (!pkg.burrito && !confirm(`${fileName} is ${pkg.product}, not an LSDJ Burrito build. Install it anyway?`)) return;
+  /* more than one FM-1 plugged in: which one, each showing its number on its screen (Colin: Install took whichever
+     answered first). The page then uses that one, so the LSDj copy below is read from it; nothing goes to the others. */
+  let chosen = null, which = 'the FM-1';
+  const fm1s = fm1Hooks ? await fm1Hooks.list().catch(() => []) : [];
+  if (fm1s.length > 1) {
+    chosen = await chooseFm1({fm1s, identify: fm1Hooks.identify, product: pkg.product});
+    if (!chosen) return say('Nothing was installed.');
+    const f = fm1s.find(x => x.key === chosen);
+    which = `FM-1 ${f.no}`;
+    log(`Installing on ${which} (${f.title || 'no LSDj'}, ${f.firmware}): chosen of ${fm1s.length}.`);
+    if (!f.inUse) {
+      say(`Connecting to ${which}…`);
+      try { await fm1Hooks.use(chosen); } catch (e) { return say(`${which}: ${e.message} Nothing was installed.`, 'bad'); }
+    }
+  }
   /* the LSDj the FM-1 has now: kept in Cartridges first if it isn't (its kits may exist nowhere else) */
   if (!(await (await import('./carts-ui.js')).keepBeforeInstall(log))) return say('Nothing was installed: the copy of the FM-1\'s LSDj could not be read. Try again, or install without a copy.', 'bad');
-  if (!confirm(`Install ${pkg.product} on the FM-1?\n\nBack up songs first. Keep stable power, the USB cable in and this tab open until it says done. An interrupted write can leave the device unable to boot; recovery is not guaranteed. Proceed?`)) return;
+  if (!confirm(`Install ${pkg.product} on ${which}?\n\nBack up songs first. Keep stable power, the USB cable in and this tab open until it says done. An interrupted write can leave the device unable to boot; recovery is not guaranteed. Proceed?`)) return;
   busy = true; updateControls();
   document.dispatchEvent(new Event('firmware-install-state'));
   const bar = $('fw-progress'); bar.hidden = false; bar.value = 0; bar.max = 1;
@@ -121,7 +141,7 @@ $('fw-install').onclick = async () => {
                    replug: REPLUG.update, 'replug-back': REPLUG.back,
                    swap: 'The FM-1 already runs this firmware: changing only its LSDj (songs saved first). Keep the cable in'};
     let swapped = false;
-    const id = await install(access, pkg, {
+    const options = {
       log, slot: swapSlot, build: swapBuild,
       onStep: (s, d) => {
         if (s === 'swap') swapped = true;
@@ -129,9 +149,14 @@ $('fw-install').onclick = async () => {
         if (s !== 'done') say(names[s] + (s.startsWith('replug') ? '' : '…'), s === 'write' || s === 'swap' || s.startsWith('replug') ? 'warn' : 'hint');
       },
       onProgress: (b, t) => { bar.max = t; bar.value = b; }
-    });
+    };
+    /* the one chosen: the DJ crate's install (install.js installOn), every other FM-1's ports kept out */
+    const target = chosen && fm1Hooks.ports(chosen);
+    if (chosen && !target) throw new InstallError(`${which} went away. Nothing was installed.`);
+    const id = chosen ? (await installOn(access, pkg, {...options, target, avoid: fm1Hooks.otherPorts(chosen)})).id
+      : await install(access, pkg, options);
     bar.value = bar.max;
-    say(swapped ? `Done: LSDj changed, the FM-1 runs ${id}.` : `Installed: the FM-1 now runs ${id}.`, 'ok');
+    say(swapped ? `Done: LSDj changed, ${which} runs ${id}.` : `Installed: ${which} now runs ${id}.`, 'ok');
     document.dispatchEvent(new CustomEvent('firmware-installed', {detail: {id}}));   /* songs-ui.js: a set's songs follow */
   } catch (err) {
     log('Stopped: ' + err.message);

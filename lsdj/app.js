@@ -6,7 +6,7 @@ import {Link, midiPorts, findFm1s, LinkError, SAVE_SIZE, CHUNK, crc32, sameFm1} 
 import {confirmSaveImport} from './save-file.js';
 import {mountSongsUi, setSongsHooks, drawSongsDevices, songsState} from './songs-ui.js';
 import {showDeviceTheme, setMatching, matching} from './page-theme.js';
-import {setBeforeInstall, installing, installTarget, usbMidiUnavailable} from './install-ui.js';
+import {setBeforeInstall, setInstallFm1s, installing, installTarget, usbMidiUnavailable} from './install-ui.js';
 import {setCrateHooks} from './crate-ui.js';
 import {logEvent} from './conn-log.js';
 import {backupSongs} from './backups.js';
@@ -260,6 +260,28 @@ const portKey = d => String(d.output.id ?? d.name);
 const numbers = fm1Numbers();   /* (fm1-numbers.js: a number each FM-1 keeps, not its place by port) */
 const fm1No = d => numbers.no(d) ?? devices.indexOf(d) + 1;
 let searchAgain = 0;
+/* Each FM-1 found (again: one that restarted comes back on new ports): did its last run end by itself? (0.9.98-dev.19,
+   link.js restartInfo; older firmware says nothing.) A crash or the watchdog goes in the Log with where, and on the
+   header when it's the FM-1 in use: it then runs LSDj on CPU0 (the meter's R0) until it's turned off and on.
+   Colin's FM-1 on a DJ deck restarted and came back on R0 with nothing saying why. */
+const restartChecked = new WeakSet();
+async function checkRestarts() {
+  for (const d of devices) {
+    if (restartChecked.has(d) || firmwareNumber(d.info.firmware) < 998) continue;
+    const l = djLinkFor(portKey(d));
+    if (!l) continue;   /* (the page is connecting: asked at the next search) */
+    restartChecked.add(d);
+    let r = null;
+    try { r = await l.restartInfo(); } catch { continue; }
+    if (!r?.why) continue;
+    const hex = n => `0x${(n >>> 0).toString(16).toUpperCase().padStart(8, '0')}`, c = r.crash;
+    const what = r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)})`
+      : 'the watchdog (CPU0 stopped answering)';
+    const text = `FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware}) restarted by itself: ${what}. It runs LSDj on CPU0 now (R0 on its CPU meter; the sound may crackle) until it's turned off and on.`;
+    logEvent(text);
+    if (connected && !virtual && sameDev(d, current)) say('device', text, 'warn');
+  }
+}
 async function scan() {
   if (!ports?.access || connecting || busy || installing()) return devices;
   if (scanning) return scanning;
@@ -280,6 +302,7 @@ async function scan() {
     if (missing.some(o => o.input.state === 'connected' && o.output.state === 'connected') && searchAgain < 5) { searchAgain++; setTimeout(() => void scan(), 2000); }
     else if (!missing.length) searchAgain = 0;
     drawDevPick(); syncWatchers();
+    void checkRestarts();
     return devices;
   })().catch(() => devices).finally(() => { scanning = null; });
   return scanning;
@@ -1737,4 +1760,24 @@ setBeforeInstall(async () => {
   link?.close(); link = null;
   connected = false; lostAt = 0;
   enable(false); say('device', 'Disconnected for the install. Connect again when it is done.', 'hint');
+});
+/* Install with more than one FM-1 plugged in (install-ui.js asks which, choose-fm1.js): the FM-1s by their numbers,
+   each showing its number on its screen (IDENTIFY, 0.9.98-dev.19), the one chosen used here first */
+setInstallFm1s({
+  list: async () => (await scan()).map(d => ({key: portKey(d), no: fm1No(d), title: d.info.title, firmware: d.info.firmware,
+    inUse: connected && !virtual && sameDev(d, current)})),
+  identify: async (key, no, seconds) => {
+    const l = djLinkFor(key);
+    if (!l) throw new LinkError('That FM-1 is not available.');
+    return l.identify(no, seconds);
+  },
+  use: async key => {
+    const d = devOf(key);
+    if (!d) throw new LinkError('That FM-1 went away.');
+    await switchTo(d);
+    drawDevPick();
+    if (!connected || !sameDev(d, current)) throw new LinkError('That FM-1 did not answer. Check it is on with LSDJ Burrito running.');
+  },
+  ports: key => { const d = devOf(key); return d ? {input: d.input.id, output: d.output.id} : null; },
+  otherPorts: key => devices.filter(d => portKey(d) !== key).flatMap(d => [d.input.id, d.output.id]),
 });

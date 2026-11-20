@@ -63,4 +63,31 @@ for (const [name, d, words, batt] of [
   status = 1; assert.equal(await link.syncSet('keybd'), 'no');
   await assert.rejects(link.syncSet('lsdj'), /KEYBD or MIDI only/); }
 
-console.log('PASS link DJ: LIVE at every length (11 / 17 words, battery, 0.9.98 rows, song rows, SYNC, SEQ, volume), VOLUME_SET, SEQ_SET, SONG_ROWS, SYNC_SET (ok, playing, no), older firmware');
+/* IDENTIFY (0.9.98-dev.19): the FM-1's number big on its screen for seconds; older firmware: status 1 -> false */
+{ const {link, sent} = fake(() => [0, []]);
+  assert.equal(OP.IDENTIFY, 0x3C);
+  assert.equal(await link.identify(2, 12), true);
+  assert.equal(await link.identify(99, 0), true);
+  assert.deepEqual(sent.map(s => [s.op & 0x3f, s.body.slice(-2)]), [[0x3C, [2, 12]], [0x3C, [99, 0]]]);
+  for (const [n, s] of [[0, 5], [100, 5], [1, 61], [1, -1], [1.5, 5]]) await assert.rejects(link.identify(n, s), /IDENTIFY/);
+  assert.equal(sent.length, 2, 'nothing sent for a number or time out of range'); }
+{ const {link} = fake(() => [1, []]);
+  assert.equal(await link.identify(1, 12), false); }
+
+/* RESTART (0.9.98-dev.19): why the last run ended, the crash record, the reset cause; older firmware: null */
+{ const w = [2, 3, 0x0200ABCD, 0x02001234, 5, 6, 0x01C10000, 812345, 0, 0x44, 0x20];
+  const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
+  const {link, sent} = fake(() => [0, [1, ...w.flatMap(le)]]);
+  assert.equal(OP.RESTART, 0x3D);
+  assert.deepEqual(await link.restartInfo(), {why: 'crash', crash: {count: 2, vec: 3, pc: 0x0200ABCD, rets: 0x02001234, emu: 5, dbg: 6, sp: 0x01C10000, uptimeMs: 812345, early: 0}, p3: 0x44, rst: 0x20});
+  assert.deepEqual(sent.map(s => [s.op & 0x3f, s.body.length <= 1]), [[0x3D, true]], 'no arguments (a tag at most)'); }
+{ const {link} = fake(() => [0, [2, ...Array(44).fill(0)]]);
+  assert.deepEqual(await link.restartInfo(), {why: 'watchdog', crash: null, p3: 0, rst: 0}); }
+{ const {link} = fake(() => [0, [0, ...Array(44).fill(0)]]);
+  assert.equal((await link.restartInfo()).why, null); }
+{ const {link} = fake(() => [1, []]);
+  assert.equal(await link.restartInfo(), null); }
+{ const {link} = fake(() => [0, [1, 2, 3]]);
+  await assert.rejects(link.restartInfo(), /Invalid restart/); }
+
+console.log('PASS link DJ: LIVE at every length (11 / 17 words, battery, 0.9.98 rows, song rows, SYNC, SEQ, volume), VOLUME_SET, SEQ_SET, SONG_ROWS, SYNC_SET (ok, playing, no), IDENTIFY, RESTART, older firmware');

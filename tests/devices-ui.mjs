@@ -14,7 +14,8 @@ async function until(check, message, ms = 8000) {
   throw Error(message);
 }
 export function fm1(n, title, fw = 'FM-1_981') {
-  const d = {n, title, page: 1, lives: 0, infos: 0, fxSets: [], silent: false, settings: 0x5a000000, screens: 0, themes: 0, delay: 0, pads: [], midi: []};
+  const d = {n, title, page: 1, lives: 0, infos: 0, fxSets: [], silent: false, settings: 0x5a000000, screens: 0, themes: 0, delay: 0, pads: [], midi: [],
+    identify: false, idents: [], other: [], restart: null, restartAsked: 0};   /* restart: [why, 11 words] (RESTART, 0.9.98-dev.19) */   /* identify: answers IDENTIFY (0.9.98-dev.19); other: every op asked besides INFO, LIVE, CART_INFO */
   const fx = Array(68).fill(0);
   fx[36] = 5; fx[37] = 2; fx[42] = 0xf2; fx[43] = 70; fx[38] = 1;
   d.input = Object.assign(new EventTarget(), {id: `in-${n}`, name: 'FM-1', state: 'connected', onmidimessage: null});   /* (listened to beside its link: MIDI sync) */
@@ -38,6 +39,9 @@ export function fm1(n, title, fw = 'FM-1_981') {
     if (op >= OP.SCREEN_INFO && op <= OP.SCREEN_FRAME) d.screens++;
     if (op === OP.PAD_SET) { const m = message[5] | (message[6] & 1) << 7; d.pads.push(m); if (m) d.page = d.page === 1 ? 2 : 1; return send(); }   /* LSDj moves: its LIVE changes */
     if (op === OP.LIVE) { d.lives++; return send([d.page, 1, 120, 0, 0, 0, 0, ...fx]); }
+    if (op === OP.RESTART && d.restart) { d.restartAsked++; return send([d.restart[0], ...d.restart.slice(1).flatMap(v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24])]); }
+    if (op === OP.IDENTIFY && d.identify) { d.idents.push([message[5] | (message[6] & 1) << 7, message[7] | (message[8] & 1) << 7]); return send(); }
+    if (![OP.INFO, OP.LIVE, OP.CART_INFO, OP.IDENTIFY, OP.RESTART].includes(op)) d.other.push(op);
     return send([], 1);
   }};
   return d;
@@ -148,6 +152,74 @@ export async function runDevicesUiTests() {
     return 'PASS several FM-1s: listed (paired by who answers), switching (pending effect to the right one), plug/pull of others, reconnect to the same one only, Follow (and its tolerance), switching back at once (read again after), All screens (tiles, the others screens, click to switch)';
   } finally {
     try { localStorage.removeItem('lsdj-burrito-follow'); } catch {}
+    if (descriptor) Object.defineProperty(navigator, 'requestMIDIAccess', descriptor);
+    else delete navigator.requestMIDIAccess;
+  }
+}
+
+/* Install with two FM-1s plugged in (0.9.98-dev.19): it asks which (Colin: it took whichever answered first). Each
+   shows its number on its screen while asked (IDENTIFY; FM-1 2's older firmware can't: its row says so), nothing is
+   picked until one is chosen, the page then uses that one and Install's question names it; Cancel installs nothing.
+   The question is answered No here: nothing is written to either FM-1. */
+export async function runInstallChooserUiTests() {
+  assert(['localhost', '127.0.0.1'].includes(location.hostname), 'Use a fresh local preview, never a real device');
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, 'requestMIDIAccess'), realConfirm = window.confirm;
+  const A = fm1(1, 'LSDj-AAA', 'FM-1_998'), B = fm1(2, 'LSDj-BBB');   /* (INFO says FM-1_998 for every 0.9.98 build) */
+  A.identify = true;
+  A.restart = [1, 2, 3, 0x0200ABCD, 0x02001234, 5, 6, 0x01C10000, 812345, 0, 0x44, 0x20];   /* it crashed (FM-1 2: older, not asked) */
+  const access = new EventTarget();
+  access.inputs = new Map([['a', A.input], ['b', B.input]]);
+  access.outputs = new Map([['a', A.output], ['b', B.output]]);
+  const using = d => document.body.classList.contains('connected') && $('device').textContent.includes(d.title);
+  const dialog = () => document.querySelector('dialog.choose-fm1');
+  const asked = [];
+  try {
+    Object.defineProperty(navigator, 'requestMIDIAccess', {configurable: true, value: async () => access});
+    window.confirm = m => { asked.push(m); return false; };
+    await $('connect-btn').onclick();
+    assert(using(A), `connected to A: ${$('device').textContent}`);
+    /* its last run ended by itself: the Log says so, once, with where */
+    const {logEntries} = await import('../lsdj/conn-log.js');
+    const said = 'FM-1 1 (LSDj-AAA, FM-1_998) restarted by itself: a crash at 0x0200ABCD (vector 3, return 0x02001234, after 812 s running; crash 2 since power-on';
+    const crashed = () => logEntries().filter(e => e.text.includes(said));
+    await until(() => crashed().length === 1, `the crash in the Log: ${logEntries().slice(-3).map(e => e.text)}`);
+    assert(B.restartAsked === 0, 'older firmware not asked');
+    /* a firmware to install: the page's own template */
+    const bytes = new Uint8Array(await (await fetch('lsdj/fm1-lsdj-template.fwsc')).arrayBuffer()), t = new DataTransfer();
+    t.items.add(new File([bytes], 'test.fwsc')); $('fw-file').files = t.files; await $('fw-file').onchange({target: $('fw-file')});
+    await until(() => !$('fw-install').disabled, `Install ready: ${$('fw-status').textContent}`);
+
+    /* Install: which one? */
+    let done = $('fw-install').onclick();
+    await until(() => dialog()?.open, 'asked which FM-1');
+    const rows = () => [...dialog().querySelectorAll('.fm1-row')].map(r => r.textContent);
+    assert(rows().length === 2 && /^1FM-1 1 · LSDj-AAA/.test(rows()[0]) && /^2FM-1 2 · LSDj-BBB/.test(rows()[1]), `the rows: ${rows()}`);
+    await until(() => A.idents.length && /its number is on its screen/.test(rows()[0]) && /can't show its number/.test(rows()[1]), `numbers shown: A ${JSON.stringify(A.idents)}; ${rows()}`);
+    assert(JSON.stringify(A.idents[0]) === '[1,12]', `A shows 1 for 12 s: ${JSON.stringify(A.idents)}`);
+    const ok = [...dialog().querySelectorAll('button')].find(b => b.classList.contains('primary'));
+    assert(ok.disabled && ![...dialog().querySelectorAll('input')].some(i => i.checked), 'nothing picked until one is chosen');
+    /* Cancel: nothing */
+    [...dialog().querySelectorAll('button')].find(b => b.textContent === 'Cancel').click(); await done;
+    assert(!dialog() && /Nothing was installed/.test($('fw-status').textContent) && !asked.length, `cancelled: ${$('fw-status').textContent}`);
+    await until(() => A.idents.some(x => x[1] === 0), `A's number taken away: ${JSON.stringify(A.idents)}`);
+
+    /* again, FM-1 2 chosen: the page uses it, the question names it; No: nothing written */
+    done = $('fw-install').onclick();
+    await until(() => dialog()?.open, 'asked again');
+    dialog().querySelectorAll('input')[1].click();
+    assert(!ok.disabled || !dialog().querySelector('button.primary').disabled, 'Install on is on');
+    assert(dialog().querySelector('button.primary').textContent === 'Install on FM-1 2', `the button: ${dialog().querySelector('button.primary').textContent}`);
+    dialog().querySelector('button.primary').click(); await done;
+    assert(using(B), `the page uses FM-1 2 now: ${$('device').textContent}`);
+    assert(asked.some(m => /^Install .* on FM-1 2\?/.test(m)), `the question names it: ${asked.map(m => m.split('\n')[0])}`);
+    assert(/Installing on FM-1 2 \(LSDj-BBB, FM-1_981\): chosen of 2/.test($('fw-log').textContent), 'the Log says which');
+    const writes = [...A.other, ...B.other].filter(op => [OP.BEGIN, OP.CHUNK, OP.COMMIT, 0x08, 0x09, 0x0A, 0x0B].includes(op));   /* the song import, the swap */
+    assert(!writes.length, `nothing written: ${writes}`);
+    assert(crashed().length === 1 && A.restartAsked === 1, `asked and said once: ${A.restartAsked}, ${crashed().length}`);
+    return 'PASS a crash restart said in the Log (RESTART), Install with two FM-1s: asks which (each its number on its screen, an older one says it can\'t), none picked until chosen, Cancel installs nothing, the one chosen used and named, nothing written when the question is answered No';
+  } finally {
+    window.confirm = realConfirm;
+    dialog()?.remove();
     if (descriptor) Object.defineProperty(navigator, 'requestMIDIAccess', descriptor);
     else delete navigator.requestMIDIAccess;
   }

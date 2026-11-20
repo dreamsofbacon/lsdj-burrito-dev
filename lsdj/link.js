@@ -14,7 +14,7 @@ export const OP = {INFO: 0x01, READ: 0x02, BEGIN: 0x03, CHUNK: 0x04, COMMIT: 0x0
   REVERB_SENDS_GET: 0x2D, REVERB_SENDS_SET: 0x2E, VOLUME_SET: 0x2F, SEQ_SET: 0x30, SONG_ROWS: 0x31, SYNC_SET: 0x32,
   DJ_DECK: 0x33, DJ_KEY: 0x34,
   PRESET_LIST: 0x35, PRESET_GET: 0x36, PRESET_PUT: 0x37, PRESET_LOAD: 0x38, PRESET_SAVE: 0x39,
-  READ_STREAM: 0x3A, STREAM_DATA: 0x3B};
+  READ_STREAM: 0x3A, STREAM_DATA: 0x3B, IDENTIFY: 0x3C, RESTART: 0x3D};
 export const STATUS = ['ok', 'bad request', 'wrong state', 'checksum mismatch', 'flash error'];
 export const CHUNK = 128;
 export const SAVE_SIZE = 131072;
@@ -365,6 +365,24 @@ export class Link {
   }
   /* the same, not waited for (the page closing: no time for a reply) */
   djDetach() { return this.post(OP.DJ_DECK, [0]); }
+  /* 0.9.98-dev.19: this FM-1's number (1..99) big over its whole screen for seconds (1..60; 0 takes it away), so the
+     one on the desk can be told from the others (Install asks which). false before (status 1). */
+  async identify(number, seconds) {
+    if (!Number.isInteger(number) || number < 1 || number > 99 || !Number.isInteger(seconds) || seconds < 0 || seconds > 60)
+      throw Error(`IDENTIFY ${number} for ${seconds} s?`);
+    return !(await this.req(OP.IDENTIFY, [number, seconds], {timeout: 600, retries: 1, allow: [0, 1]})).status;
+  }
+  /* 0.9.98-dev.19: why this FM-1's last run ended -> {why: 'crash' | 'watchdog' | null (power on, an install, a
+     planned restart), crash: {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} or null, p3, rst}; null before
+     (status 1). Read only. (Colin's FM-1 restarted during DJ use and came back on CPU0, R0, with nothing saying why.) */
+  async restartInfo() {
+    const r = await this.req(OP.RESTART, [], {timeout: 600, retries: 1, allow: [0, 1]});
+    if (r.status) return null;
+    if (r.data.length !== 1 + 4 * 11) throw new LinkError('Invalid restart information from the FM-1.');
+    const w = Array.from({length: 11}, (_, i) => rd32(r.data, 1 + 4 * i));
+    const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst] = w;
+    return {why: [null, 'crash', 'watchdog'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst};
+  }
   /* 0.9.98-dev.6, the presets (firmware/lsdj_presets.h, lsdj/presets.js); INFO's presets says the FM-1 has them.
      The list: {current (0..7, null none), names: [8, null = empty]} */
   async presetList() {
