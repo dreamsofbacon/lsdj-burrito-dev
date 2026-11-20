@@ -53,19 +53,28 @@ assert.equal(offset(null, 3), null);
   assert.ok(near(chainEnd(0, 4, 8, T - 500, 120, T), T + 51.5 * 125), 'read 0.5 s (4 rows) ago');
   assert.ok(near(chainEnd(3, 4, 15, T - 1000, 120, T), T + (0.5 - 8 + 64) * 125), 'past the chain end: the next one, as long');
   assert.equal(chainEnd(null, 4, 3, T, 120, T), null); assert.equal(chainEnd(1, null, 3, T, 120, T), null); assert.equal(chainEnd(1, 4, 3, null, 120, T), null);
-  /* the start is on a bar line, the nearest to the end, whatever the estimate's error (up to half a phrase) */
-  for (const err of [-900, -400, 0, 400, 900]) {
+  /* the start is on a bar line when one is within 1.5 rows (187 ms) of the chain's end as LIVE says it ... */
+  for (const err of [-180, -60, 0, 60, 180]) {
     const end = T + 700 + 6 * bar + err, got = chainStart(T + 700, 120, end);
     assert.ok(near(got, T + 700 + 6 * bar), `chain ends 6 bars after the next line, estimated ${err} ms off: its 6th bar line (${got})`);
   }
-  assert.ok(near(chainStart(T + 700, 120, T + 100), T + 700), 'an end before the next bar: the next bar');
+  /* ... else it is the end itself (grids apart: never a phrase out, never sliding from bar to bar) */
+  for (const err of [-900, -400, 400, 900]) {
+    const end = T + 700 + 6 * bar + err;
+    assert.ok(near(chainStart(T + 700, 120, end), end), `phrases ${err} ms off the clock's bars: the end itself`);
+  }
+  { let prev = null;   /* the estimate wandering 0.5 bar to and fro doesn't move the start by a bar */
+    for (let w = 0; w < 40; w++) { const end = T + 700 + 6 * bar + 1000 + (w % 2 ? 40 : -40), got = chainStart(T + 700, 120, end);
+      assert.ok(Math.abs(got - end) < 1e-6, 'half a bar off: the end, whichever way it rounds'); } }
+  assert.ok(near(chainStart(T + 700, 120, T + 100), T + 100), 'an end before the next bar (grids apart): the end itself');
   assert.ok(near(chainStart(T + 700, 120, null), T + 700), 'not known: the next bar');
   /* a chain of 2 on its last row of phrase 1: its end is 16.5 rows (2.06 s) on. The clock's line a little before or
      after the row's own idea of the phrase end (62 ms) must still mean "the phrase after": a bar after that line */
-  for (const lineAt of [0, 62.5, 250, 600]) {
+  for (const lineAt of [0, 62.5, 150]) {
     const end = chainEnd(0, 2, 15, T, 120, T);
     assert.ok(near(chainStart(T + lineAt, 120, end), T + lineAt + bar), `row 15 of 2, the clock's line ${lineAt} ms on: the next phrase's end`);
   }
+  assert.ok(near(chainStart(T + 600, 120, chainEnd(0, 2, 15, T, 120, T)), T + 2062.5), 'a clock line 540 ms from the phrase end: the end itself');
   assert.ok(START_ON.every(([k, t, u]) => typeof k === 'string' && t && u === startUnit(k)));
   assert.ok(near(startTime(BAR * 5.5, 120, 1000, 8 * BAR), 1000 + BAR * 2.5 * clock), 'bar 5.5 of 8: its bar 8');
   assert.ok(near(startTime(BAR * 4, 120, 1000, 4 * BAR), 1000), 'on its 4 bars: now');

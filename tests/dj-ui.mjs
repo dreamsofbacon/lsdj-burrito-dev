@@ -21,7 +21,7 @@ const assert = (v, message) => { if (!v) throw Error(message); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message, ms = 8000) {
   for (const end = Date.now() + ms; Date.now() < end;) { if (check()) return; await sleep(50); }
-  throw Error(message);
+  throw Error(typeof message === 'function' ? message() : message);
 }
 /* a save with only its header filled in (names, versions, the open song, the block table): what a deck reads */
 function fakeSave(songs, active) {
@@ -75,7 +75,10 @@ function fm1(n, title, fw = 'FM-1_997') {
     if (op === OP.SETTINGS_GET) return send([0, 8, 16, 24].map(s => (d.settings >>> s) & 255));
     if (op >= OP.SCREEN_INFO && op <= OP.SCREEN_FRAME) d.screens++;   /* (no screen here: the deck says so) */
     if (op === OP.THEME_GET) return send(Array(16).fill(0));
-    const dj = fw >= 'FM-1_998' ? [0x82, 5, 5, 5, 5, 2, 2, 2, 2, d.sync, d.seq, d.level] : [];
+    /* d.chain {phase: () => clocks played, len}: its rows move with that clock (16 rows a phrase, 6 clocks a row) and LIVE
+       says the place in the chain and its phrases (0.9.98-dev.12), as the real FM-1 */
+    const rowsPlayed = d.chain ? Math.floor(d.chain.phase() / 6) : 0, crow = rowsPlayed % 16, cpos = Math.floor(rowsPlayed / 16) % (d.chain?.len || 1);
+    const dj = fw >= 'FM-1_998' ? [0x82, ...(d.chain ? [crow, crow, crow, crow] : [5, 5, 5, 5]), 2, 2, 2, 2, d.sync, d.seq, d.level, ...(d.chain ? [cpos, cpos, cpos, cpos, d.chain.len, d.chain.len, d.chain.len, d.chain.len] : [])] : [];
     if (op === OP.MIDI_GET) return send([0, 8, 16, 24].map(s => (d.midiWord >>> s) & 255));
     if (op === OP.MIDI_SET) { d.midiWord = (body[0] | body[1] << 8 | body[2] << 16 | body[3] << 24) >>> 0; d.midiSets.push(d.midiWord); return send(); }
     if (op === OP.SYNC_SET && fw >= 'FM-1_998' && d.dev2) { if (d.playing) return send([], 2); d.syncSets.push(body[0]); d.sync = body[0]; return send(); }
@@ -245,6 +248,32 @@ export async function runDjUiTests() {
       const at2 = B.midi.find(m => m[0] === 0xfa).ts, onA = deckA.clock.phase(at2);
       const off2 = Math.min(onA % 192, 192 - (onA % 192));
       assert(off2 < 0.5, `B's Start on A's every-2-bars: A at ${onA.toFixed(2)} clocks then`);
+      choose(startOn, 'bar');
+    }
+
+    // 3d. Next chain (Colin: vital for a DJ): B (0.9.98, it says its chain) plays a 3-phrase chain that moves with B's
+    //     clock; A (Play starts: Next chain) starts on the bar line at the end of it, however far into a phrase B is,
+    //     never a phrase out, and it does start
+    {
+      const startOn = document.querySelector('select[aria-label="Deck A Play starts"]'), fromA = document.querySelector('select[aria-label="Deck A count the start on"]');
+      const deckA = djState().decks[0], deckB = djState().decks[1];
+      const aEl = () => [...document.querySelectorAll('.dj-deck')][0];
+      B.chain = {phase: () => deckB.clock.phase(), len: 3}; const playingWas = B.playing; B.playing = 15;   /* (the four channels playing) */
+      for (const [want, label, shift] of [[0.25, 'early in a phrase', 0], [0.9, 'late in a phrase', 0], [0.98, 'almost at the next phrase', 0], [0.5, 'phrases half a bar off the clock', 48], [0.1, 'phrases 20 clocks off the clock', 20]]) {
+        B.chain.phase = () => deckB.clock.phase() + shift;   /* (LSDj's rows against its clock: a start part-way through a phrase) */
+        if (deckA.clock.running || deckA.startTimer) { aEl().querySelector('.dj-play').click(); await until(() => !deckA.clock.running && !deckA.startTimer, 'A stopped', 2000); }
+        choose(startOn, 'chain'); choose(fromA, 'deck');
+        await sleep(900);   /* (a LIVE or two with the chain) */
+        await until(() => { const p = (deckB.clock.phase() + shift) % 96; return p / 96 > want - 0.02 && p / 96 < want + 0.02; }, `B ${label}`, 8000);
+        A.midi.length = 0;
+        aEl().querySelector('.dj-play').click();
+        assert(deckA.startTimer || deckA.clock.running, `A Play (${label}): waiting or started`);
+        await until(() => A.midi.some(m => m[0] === 0xfa), `A started on B's chain end (${label})`, 15000);
+        const at = A.midi.find(m => m[0] === 0xfa).ts, onB = deckB.clock.phase(at), off = Math.min((onB + shift) % 288, 288 - ((onB + shift) % 288));
+        assert(off < (shift ? 6 : 0.5), `A's Start on the end of B's 3-phrase chain (${label}): B at ${onB.toFixed(2)} clocks then (${off.toFixed(2)} off a chain line)`);
+      }
+      B.chain = null; B.playing = playingWas;
+      for (let i = 0; i < 4; i++) { deckB.seenPlaying = false; await sleep(400); }   /* (its FM-1 said "playing" meanwhile: not to be taken as stopped on the FM-1 now) */
       choose(startOn, 'bar');
     }
 

@@ -355,15 +355,22 @@ function armStart(d) {
   else {
     const unit = startUnit(d.startOn);
     at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
-    if (d.startOn === 'chain' && r) {   /* the next bar, then the phrases left in the playing deck's chain */
+    if (d.startOn === 'chain' && r) {   /* the end of the playing deck's chain, on its bar line when one is that close */
       const end = chainEndOf(r.deck, t, r.bpm);
-      if (end != null) at = chainStart(at, r.bpm, end);
+      if (end != null) {
+        at = chainStart(at, r.bpm, end);
+        /* kept from the first arm: a later estimate more than half a phrase away from it is the chain's end having
+           gone by (the rows read a little early or late: it would be the NEXT chain's end, a whole chain on) and
+           is not followed */
+        if (d.chainAt != null && Math.abs(at - d.chainAt) > 2 * 60000 / r.bpm) at = Math.max(d.chainAt, t);
+        d.chainAt = at;
+      }
       else if (!d.chainSaid) { d.chainSaid = true; say(`Deck ${NAMES[d.i]}: ${r.deck ? `deck ${NAMES[r.deck.i]}'s FM-1 doesn't say where it is in its chain just now (needs 0.9.98-dev.12, and playing)` : 'the master has no chains'}: it starts on the next bar.`); }
     }
   }
   d.startAt = at;
   if (at - t > ARM_MS) d.startTimer = later(at - t - ARM_MS, () => armStart(d));
-  else { c.setTempo(d.bpm); c.start(at); uncue(d); }
+  else { c.setTempo(d.bpm); c.start(at); uncue(d); d.chainAt = null; }
   drawPlay(d);
   void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
@@ -380,7 +387,7 @@ function chainEndOf(o, t, bpm) {
   if (c == null) return null;
   return chainEnd(l.chainPos[c], l.chainLen[c], l.rows[c] & 15, ((l.askedAt ?? t) + (l.gotAt ?? t)) / 2, bpm, t);
 }
-function cancelStart(d) { d.chainSaid = false; cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
+function cancelStart(d) { d.chainSaid = false; d.chainAt = null; cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
 /* 0.9.98-dev.4: the deck on its FM-1's own keys, OP4 Play and OP5 Stop, lit as the deck (firmware/lsdj_djkeys.h).
    Each poll tells the FM-1 the deck's state (DJ_DECK); it lets go of the keys 3 s after the last one, and at once
    when the layout hides, the deck takes another FM-1, or the page closes. A firmware without it: not asked again. */

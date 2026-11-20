@@ -64,13 +64,15 @@ export function chainEnd(p, len, row, readAt, bpm, now) {
   while (left <= 0) left += total;
   return now + left * rowMs;
 }
-/* the start for "Next chain": the deck's bar line (the clock's: exact) nearest the chain's end as LIVE says it. The
-   LIVE estimate is good to about a row; the bar lines are exact, so a start is always on one, and a row that the read
-   has wrong by up to half a phrase still lands on the right one (adding whole phrases to the NEXT bar broke when the
-   two disagreed near a phrase's end: a whole phrase early or late). nextBar: the first bar line after now (ms). */
+/* the start for "Next chain": the chain's end as LIVE says it (good to about a row, 125 ms at 120 BPM), made exact by
+   the deck's bar line when one is within 1.5 rows of it (the clock's lines are exact: a start on one is sample-true).
+   nextBar: the first bar line after now (ms). When no line is that close (the LSDj's phrases started off the clock's
+   bars, as after a start part-way through a phrase) it is the end itself, so the start can't be a phrase out and
+   can't slide from bar to bar as the estimate moves, and may come before the clock's next bar (a start counted from the NEXT bar did, and so never came). */
 export function chainStart(nextBar, bpm, end) {
-  const barMs = 4 * 60000 / clampBpm(bpm);
-  return end == null ? nextBar : nextBar + Math.max(0, Math.round((end - nextBar) / barMs)) * barMs;
+  if (end == null) return nextBar;
+  const barMs = 4 * 60000 / clampBpm(bpm), line = nextBar + Math.max(0, Math.round((end - nextBar) / barMs)) * barMs;
+  return Math.abs(line - end) <= 1.5 * 15000 / clampBpm(bpm) ? line : end;
 }
 /* what's left before a start at `at` (ms), at bpm: whole beats left, rounded up (1 on the last beat), and the bars */
 export function countIn(at, bpm, now) {
