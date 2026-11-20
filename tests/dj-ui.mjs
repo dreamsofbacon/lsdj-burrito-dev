@@ -220,12 +220,13 @@ export async function runDjUiTests() {
     // 3c. Play starts (Colin: hard to start on time): every 2 bars of deck A (its LSDj's phrases from its start); PLAY
     //     counts down; Play again while it counts cancels (no Start sent); kept in this browser
     {
-      const startOn = document.querySelector('select[aria-label="Play starts"]'), from = document.querySelector('select[aria-label="Count the start on"]');
-      assert(startOn && from && startOn.value === 'bar' && from.value === 'deck', `Play starts: next bar, on the playing deck: ${startOn?.value} ${from?.value}`);
+      const startOn = document.querySelector('select[aria-label="Deck B Play starts"]'), from = document.querySelector('select[aria-label="Deck B count the start on"]');
+      assert(document.querySelector('select[aria-label="Deck A Play starts"]')?.value === 'chain', 'each deck has its own Play starts');
+      assert(startOn && from && startOn.value === 'chain' && from.value === 'deck', `Play starts: next chain, on the playing deck: ${startOn?.value} ${from?.value}`);
       deckBEl0().querySelector('.dj-play').click();   /* B stopped */
       assert(!deckB.clock.running, 'B stopped for 3c');
       choose(startOn, '2');
-      assert(localStorage.getItem('dj-start-on') === '2', 'kept');
+      assert(localStorage.getItem('dj-start-on-1') === '2' && document.querySelector('select[aria-label="Deck A Play starts"]').value === 'chain', 'kept, for deck B only');
       const deckA = djState().decks[0];
       /* wait until A is early in a 2-bar span, so the start is more than a beat away */
       await until(() => { const p = deckA.clock.phase() % 192; return p > 10 && p < 40; }, 'A early in its 2 bars', 5000);

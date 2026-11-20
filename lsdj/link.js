@@ -427,13 +427,20 @@ export function infoFrom(d) {
 
 /* An FM-1 known again on new ports (Windows numbers them again when it comes back, and its port name can change:
    "Felucca", "3 - Felucca"): among these candidates, the one whose INFO (infoOf(x) -> {title, firmware, saveCrc})
-   says what `info` said, the songs' checksum deciding between two of the same; else null (the user chooses). */
+   says what `info` said, the songs' checksum deciding between two of the same; else null (the user chooses).
+   After a firmware update it says a NEWER firmware (and maybe another LSDj, whose songs differ): the one candidate
+   with a newer firmware number counts as it (two newer: the user chooses). An older or equal other firmware: no. */
+const fwNum = f => +(/(\d+)\D*$/.exec(f || '') || [])[1] || 0;
 export function sameFm1(list, info, infoOf = x => x) {
   if (!info) return null;
   const same = list.filter(x => infoOf(x)?.title === info.title && infoOf(x)?.firmware === info.firmware);
-  if (same.length <= 1) return same[0] || null;
-  const crc = same.filter(x => infoOf(x).saveCrc === info.saveCrc);
-  return crc.length === 1 ? crc[0] : null;
+  if (same.length === 1) return same[0];
+  if (same.length > 1) {
+    const crc = same.filter(x => infoOf(x).saveCrc === info.saveCrc);
+    return crc.length === 1 ? crc[0] : null;
+  }
+  const newer = list.filter(x => fwNum(infoOf(x)?.firmware) > fwNum(info.firmware));
+  return newer.length === 1 ? newer[0] : null;
 }
 
 /* Web MIDI: the FM-1's ports (its USB name is Felucca), or every port to choose from. */
