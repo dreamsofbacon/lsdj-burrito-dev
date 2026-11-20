@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import assert from 'node:assert/strict';
-import {fileKind, loadItems, saveItems, addItem, removeItem, renameItem, pairItems, unusedSaves, describe, recolorItem, setImage, unusedImages, moveItem, viewItems, formatOfTitle} from '../lsdj/crate.js';
+import {fileKind, loadItems, saveItems, addItem, removeItem, renameItem, pairItems, unusedSaves, describe, recolorItem, setImage, unusedImages, moveItem, viewItems, formatOfTitle, installedFm1} from '../lsdj/crate.js';
 import {SAV_SIZE, SONG_SIZE, BLOCK_COUNT, buildSav, parseSav, songBytes, withOpenSong} from '../lsdj/lsdj-sav.js';
 import {BANK, crc32} from '../lsdj/lsdj-rom.js';
 
@@ -124,6 +124,19 @@ assert.equal(describe({sav: S2}, id => lib[id]).missing, true);
   assert.equal(formatOfTitle('LSDj-v7.1.0', [titled]), 4, 'from an LSDj file of that title');
   assert.equal(formatOfTitle('LSDj-v1.0.0', [titled]), null);
   assert.equal(formatOfTitle('LSDj-v9.1.4'), 19, 'from its version (lsdj-sets.js formatOfVersion)');
+}
+/* which FM-1 restarted after a crate install (installedFm1) */
+{
+  const one = [{key: 'output-4'}];
+  assert.deepEqual(installedFm1({restarted: false, confirmed: false, fresh: [], ownKey: 'output-4'}), {key: 'output-4'}, 'never restarted: its own');
+  assert.deepEqual(installedFm1({restarted: true, confirmed: true, fresh: one}), one[0], 'confirmed, one new');
+  assert.equal(installedFm1({restarted: true, confirmed: true, fresh: [...one, {key: 'output-6'}]}), null, 'two new: ask');
+  const unsure = {restarted: true, confirmed: false, fresh: one, othersBefore: ['output-3'], nowKeys: ['output-3', 'output-4'], build: 0xe93f3ccf};
+  assert.deepEqual(installedFm1({...unsure, freshBuild: 0xe93f3ccf}), one[0], 'unconfirmed, but it reports the new build and the other FM-1 stayed');
+  assert.equal(installedFm1({...unsure, freshBuild: 0x4050d83b}), null, 'an old build: not it');
+  assert.equal(installedFm1({...unsure, freshBuild: null}), null, 'no answer: ask');
+  assert.equal(installedFm1({...unsure, freshBuild: 0xe93f3ccf, nowKeys: ['output-4']}), null, 'another FM-1 is gone: ask');
+  assert.equal(installedFm1({...unsure, build: null, freshBuild: null}), null, 'a firmware without a build: ask');
 }
 /* straight into a chosen song: that song in the working area, opened; the saved songs untouched */
 {

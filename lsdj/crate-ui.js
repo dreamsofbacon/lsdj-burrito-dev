@@ -4,7 +4,7 @@
 // that FM-1 alone (install.js installOn: nothing is sent to the other FM-1s, the other decks' gear or the mixer),
 // then a paired .sav follows. lsdj/crate.js holds the list; the files stay in this browser (kit-library.js).
 import {KEY, fileKind, loadItems, saveItems, addItem, removeItem, renameItem, pairItems, unusedSaves, describe,
-  recolorItem, setImage, unusedImages, moveItem, viewItems, formatOfTitle} from './crate.js';
+  recolorItem, setImage, unusedImages, moveItem, viewItems, formatOfTitle, installedFm1} from './crate.js';
 import {labelEditor, paintLabel, shrinkImage, imageUrl, isHex} from './cart-label.js';
 import {opens, needsText} from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary} from './kit-library.js';
@@ -330,8 +330,12 @@ export async function loadOnto(id, i, slot = null) {
     if (pkg.slot) void notePrint(item.rom, new DataView(pkg.slot.buffer, pkg.slot.byteOffset).getUint32(16, true) >>> 0, listKits(rom).map(k => k.bank)).catch(() => {});
     /* the restarted FM-1: the one found now that wasn't there before (none restarted: it already had this LSDj) */
     await wait(1500);
-    const fresh = (await app.rescan()).filter(x => !others.has(x.key));
-    const back = !restarted ? {key: d.key} : r.confirmed && fresh.length === 1 ? fresh[0] : null;
+    const now = await app.rescan(), fresh = now.filter(x => !others.has(x.key));
+    /* unsure whether another FM-1 left meanwhile: the one new FM-1 asked which build it runs (INFO, nothing written) */
+    const freshBuild = restarted && !r.confirmed && fresh.length === 1 ? await app.info(fresh[0].key).then(x => x?.build ?? null).catch(() => null) : null;
+    const back = installedFm1({restarted, confirmed: r.confirmed, fresh, othersBefore: [...others], nowKeys: now.map(x => x.key),
+      build: pkg.build, freshBuild, ownKey: d.key});
+    if (back && restarted && !r.confirmed) logEvent(`Deck ${d.name}: the FM-1 on ${back.key} reports the build just installed and no other FM-1 moved: it's this deck's.`);
     /* (fresh: FM-1s on ports that weren't there before the install, not all those plugged in: "found: 1" with two
        plugged in read as one missing, Colin's DJ test) */
     const after = !restarted ? ' (it already had this LSDj)'

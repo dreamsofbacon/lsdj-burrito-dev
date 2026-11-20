@@ -38,6 +38,11 @@ export function lsdjLabel(rom) {
   const v = lsdjVersion(rom);
   if (v) return versionText(v);
   const t = String.fromCharCode(...rom.subarray(0x134, 0x144)).replace(/[^\x20-\x7e]/g, ' ').trim();
+  /* a version with letters (9.2.L, 9.1.Caboy): as its title writes it. (lsdjVersion stays numbers only: it also picks
+     the kits' frame order, wantsRotated, and those builds follow their own kits there.) A card said "LSDj before 4.3"
+     for 9.2.L (Colin's crate, 2026-11-19) */
+  const lettered = /v(\d+\.\d+\.[0-9A-Za-z]+)/.exec(t);
+  if (lettered) return lettered[1];
   return /^LSDJ\b/i.test(t) ? 'before 4.3' : t ? `"${t}"` : 'unknown version';
 }
 /* Song formats. A song's last byte (0x7FFF) is its format: the LSDj that last saved it writes its own number there
@@ -359,7 +364,7 @@ export function buildSet(plan, ctx, template = null) {
 const sampleName = (k, i) => (k.names.find(s => s.index === i)?.name ?? '').replace(/-+$/, '') || `#${i + 1}`;
 export function setReport(built, title, ctx) {
   const L = [title, '='.repeat(title.length), ''];
-  L.push(`LSDj: ${versionText(lsdjVersion(ctx.base))}; ${Math.ceil(built.plan.needed / 1024)} of ${Math.floor(ctx.capacity / 1024)} KiB on the FM-1.`, '');
+  L.push(`LSDj: ${lsdjLabel(ctx.base)}; ${Math.ceil(built.plan.needed / 1024)} of ${Math.floor(ctx.capacity / 1024)} KiB on the FM-1.`, '');
   L.push('Songs:'); for (const s of built.songs) L.push(`  ${s.name}` + (s.lost.length ? ` (loses ${s.lost.map(l => `kit ${hex(l.kit)} ${l.name}`).join(', ')})` : ''));
   L.push('', 'Kits:');
   for (const k of built.kits) L.push(`  ${hex(k.number)} ${k.name.padEnd(6)} from ${k.source}: ${k.kept.map(i => sampleName(k, i)).join(' ') || 'none'}` +

@@ -115,6 +115,21 @@ export function describe(item, bytesOf) {
    else the ones measured (lsdj-sets.js songFormat), else from its version number (lsdj-sets.js formatOfVersion, the dev.18 page) */
 const KNOWN_FORMATS = {'LSDj-v9.3.9': 22, 'LSDj-v9.4.0': 22, 'LSDj-v9.4.2': 22, 'LSDj-v5.7.8': 4};   /* (9.4.x: format 22, lsdj-sets.js lsdjFormat) */
 const titleText = t => String(t || '').replace(/[\u0000 ]+$/, '');
+/* After a crate install, which FM-1 is the one that restarted -> its {key} or null (the deck asks to choose it).
+   restarted: false = it never restarted (it had this LSDj): the deck's own. confirmed: installOn kept sight of every
+   other port all along. fresh: the FM-1s on ports not seen before the install ({key}); othersBefore: the other FM-1s'
+   keys before it, nowKeys: every FM-1's key now. freshBuild: the build the one fresh FM-1 reports (INFO), build: the
+   build just installed. Unconfirmed, the one fresh FM-1 is still it when it reports the build just installed and
+   every other FM-1 is still where it was: on Windows Chrome lists every MIDI port again while one FM-1 restarts, so
+   a kept-out port can be missing for a moment without going anywhere (Colin's 9.2.L install, 2026-11-19: "another
+   FM-1 was unplugged meanwhile", none was; the Log showed no other port disconnect). */
+export function installedFm1({restarted, confirmed, fresh, othersBefore = [], nowKeys = [], build = null, freshBuild = null, ownKey}) {
+  if (!restarted) return {key: ownKey};
+  if (fresh.length !== 1) return null;
+  if (confirmed) return fresh[0];
+  const othersStill = othersBefore.every(k => nowKeys.includes(k));
+  return Number.isInteger(build) && freshBuild === build && othersStill ? fresh[0] : null;
+}
 export function formatOfTitle(title, roms = []) {
   const t = titleText(title);
   for (const r of roms) if (titleText(String.fromCharCode(...r.subarray(0x134, 0x144))) === t) { const f = lsdjFormat(r); if (f != null) return f; }

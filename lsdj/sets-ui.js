@@ -144,7 +144,7 @@ function listen(kits) {
 }
 function drawLibrary(box) {
   const list = el('ul', {className: 'sets-lib'});
-  for (const r of state.roms) list.append(el('li', {}, `${r.name}: LSDj ${S.versionText(S.lsdjVersion(r.rom))}, ${plural(r.slots.filter(s => !s.empty).length, 'kit')} `,
+  for (const r of state.roms) list.append(el('li', {}, `${r.name}: LSDj ${S.lsdjLabel(r.rom)}, ${plural(r.slots.filter(s => !s.empty).length, 'kit')} `,
     el('button', {type: 'button', textContent: 'Forget', onclick: () => guard(async () => { await removeFromLibrary(r.id); })}),
     listen(r.slots.filter(s => !s.empty).map(s => ({bank: r.rom.subarray(s.bank * BANK, (s.bank + 1) * BANK), name: `Kit ${hex(s.number)}`, number: s.number})))));
   for (const k of state.kitFiles) list.append(el('li', {}, `${k.name}: kit ${parseKit(k.bank).name} `,
@@ -160,7 +160,7 @@ function drawLibrary(box) {
       : el('p', {className: 'warn', textContent: 'None yet: add your LSDj .gb files (and any .kit files).'}));
   if (state.roms.length) {
     const base = el('select', {onchange: () => { state.baseId = base.value; draw(); }},
-      ...state.roms.map(r => el('option', {value: r.id, textContent: `${r.name} (LSDj ${S.versionText(S.lsdjVersion(r.rom))})`, selected: r.id === state.baseId})));
+      ...state.roms.map(r => el('option', {value: r.id, textContent: `${r.name} (LSDj ${S.lsdjLabel(r.rom)})`, selected: r.id === state.baseId})));
     box.append(el('p', {}, 'Build the sets with: ', base, el('span', {className: 'hint', textContent: ' (its program; its own kits are used only when a song plays them)'})));
   }
 }

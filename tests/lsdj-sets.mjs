@@ -182,6 +182,15 @@ const tight = {...roomy, capacity: sizeOf(all) - 1};
   assert.ok(built.warnings.some(w => /older/.test(w)));
   assert.equal(built.rom[kitSlots(built.rom)[0].bank * BANK + 0x5f], 0);   /* frames for the old LSDj */
 }
+/* a lettered version's label: as its title writes it, not "before 4.3"; lsdjVersion stays numbers only */
+{
+  const titled = t => { const r = new Uint8Array(0x8000); [...t].forEach((c, i) => r[0x134 + i] = c.charCodeAt(0)); return r; };
+  assert.equal(S.lsdjLabel(titled('LSDj-v9.2.L')), '9.2.L');
+  assert.equal(S.lsdjLabel(titled('LSDj-v9.1.Caboy')), '9.1.Caboy');
+  assert.equal(S.lsdjLabel(titled('LSDj-v9.3.9')), '9.3.9');
+  assert.equal(S.lsdjLabel(titled('LSDJ')), 'before 4.3');
+  assert.equal(S.lsdjVersion(titled('LSDj-v9.2.L')), null);
+}
 /* song formats -> the oldest LSDj that opens them (the dev.18 page), and back from a version */
 {
   assert.equal(S.firstLsdjFor(22), '9.2.1');
