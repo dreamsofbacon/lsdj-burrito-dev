@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // lsdj/dj.js: the DJ layout's maths (node tests/dj.mjs).
 import assert from 'node:assert/strict';
-import {BEAT, BAR, position, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainLeft, countIn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
+import {BEAT, BAR, position, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainEnd, chainStart, countIn, crossfade, level, djFilter, tapper, clockMeter, SYNC_MAX_BEND, SYNC_MIN_MS} from '../lsdj/dj.js';
 import {PPQN} from '../lsdj/midiclock.js';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -44,13 +44,28 @@ assert.equal(offset(null, 3), null);
 { const clock = 60000 / (120 * PPQN);
   assert.equal(startUnit('now'), 0); assert.equal(startUnit('beat'), BEAT); assert.equal(startUnit('8'), 8 * BAR);
   assert.equal(startUnit('nonsense'), BAR, 'unknown: the next bar');
-  /* Next chain (0.9.98-dev.12): a bar, plus the phrases left in the playing deck's chain (chainLeft) */
+  /* Next chain (0.9.98-dev.12): the deck's bar line nearest where LIVE says its chain ends */
   assert.equal(startUnit('chain'), BAR);
-  assert.equal(chainLeft(0, 4, 8, 0, 120), 3, 'phrase 1 of 4, half way: 3 more');
-  assert.equal(chainLeft(3, 4, 4, 0, 120), 0, 'the last phrase: the chain starts on the next bar');
-  assert.equal(chainLeft(3, 4, 15, 500, 120), 3, 'read on its last row 0.5 s ago: the next chain has begun (as long)');
-  assert.equal(chainLeft(0, 1, 3, 0, 120), 0, 'a one-phrase chain: every bar');
-  assert.equal(chainLeft(null, 4, 3, 0, 120), null); assert.equal(chainLeft(1, null, 3, 0, 120), null);
+  const bar = 2000, T = 10000;   /* 120 BPM: a phrase is 2 s, a row 125 ms */
+
+  /* phrase 1 of 4, row 8 read now: 7.5 rows of it + 3 more phrases = 55.5 rows left */
+  assert.ok(near(chainEnd(0, 4, 8, T, 120, T), T + 55.5 * 125), 'phrase 1 of 4, row 8: 55.5 rows left');
+  assert.ok(near(chainEnd(0, 4, 8, T - 500, 120, T), T + 51.5 * 125), 'read 0.5 s (4 rows) ago');
+  assert.ok(near(chainEnd(3, 4, 15, T - 1000, 120, T), T + (0.5 - 8 + 64) * 125), 'past the chain end: the next one, as long');
+  assert.equal(chainEnd(null, 4, 3, T, 120, T), null); assert.equal(chainEnd(1, null, 3, T, 120, T), null); assert.equal(chainEnd(1, 4, 3, null, 120, T), null);
+  /* the start is on a bar line, the nearest to the end, whatever the estimate's error (up to half a phrase) */
+  for (const err of [-900, -400, 0, 400, 900]) {
+    const end = T + 700 + 6 * bar + err, got = chainStart(T + 700, 120, end);
+    assert.ok(near(got, T + 700 + 6 * bar), `chain ends 6 bars after the next line, estimated ${err} ms off: its 6th bar line (${got})`);
+  }
+  assert.ok(near(chainStart(T + 700, 120, T + 100), T + 700), 'an end before the next bar: the next bar');
+  assert.ok(near(chainStart(T + 700, 120, null), T + 700), 'not known: the next bar');
+  /* a chain of 2 on its last row of phrase 1: its end is 16.5 rows (2.06 s) on. The clock's line a little before or
+     after the row's own idea of the phrase end (62 ms) must still mean "the phrase after": a bar after that line */
+  for (const lineAt of [0, 62.5, 250, 600]) {
+    const end = chainEnd(0, 2, 15, T, 120, T);
+    assert.ok(near(chainStart(T + lineAt, 120, end), T + lineAt + bar), `row 15 of 2, the clock's line ${lineAt} ms on: the next phrase's end`);
+  }
   assert.ok(START_ON.every(([k, t, u]) => typeof k === 'string' && t && u === startUnit(k)));
   assert.ok(near(startTime(BAR * 5.5, 120, 1000, 8 * BAR), 1000 + BAR * 2.5 * clock), 'bar 5.5 of 8: its bar 8');
   assert.ok(near(startTime(BAR * 4, 120, 1000, 4 * BAR), 1000), 'on its 4 bars: now');

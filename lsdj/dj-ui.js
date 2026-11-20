@@ -19,7 +19,7 @@
 //   on that FM-1's link, or (0.9.98) the song row map: click a row to cue it.
 import {startClock, clampBpm, PPQN, CLOCK, START, CONTINUE, STOP, LOOKAHEAD_MS, workerTimer} from './midiclock.js';
 import {sameFm1, OP} from './link.js';
-import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainLeft, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
+import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainEnd, chainStart, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
 import {PRESETS, preset, readMidi, actionFor, out, learnRule, saveLearned, loadLearned} from './mixers.js';
 import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, pitchFree, rangeFor, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
 import {unpackFx, packFx, unpackReverb, packReverb, packReverbSends, CHANNELS, firmwareNumber, unpackSettings, PRESETS as THEME_COLOURS, CUSTOM_THEME, THEMES, unpackMidi, packMidi, paramSet, PARAM} from './fx-model.js';
@@ -356,9 +356,9 @@ function armStart(d) {
     const unit = startUnit(d.startOn);
     at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
     if (d.startOn === 'chain' && r) {   /* the next bar, then the phrases left in the playing deck's chain */
-      const left = chainOf(r.deck, t, r.bpm);
-      if (left != null) at += left * 4 * 60000 / r.bpm;
-      else if (!d.chainSaid) { d.chainSaid = true; say(`Deck ${NAMES[d.i]}: ${r.deck ? `deck ${NAMES[r.deck.i]}'s FM-1 doesn't say where it is in its chain (needs 0.9.98-dev.12)` : 'the master has no chains'}: it starts on the next bar.`); }
+      const end = chainEndOf(r.deck, t, r.bpm);
+      if (end != null) at = chainStart(at, r.bpm, end);
+      else if (!d.chainSaid) { d.chainSaid = true; say(`Deck ${NAMES[d.i]}: ${r.deck ? `deck ${NAMES[r.deck.i]}'s FM-1 doesn't say where it is in its chain just now (needs 0.9.98-dev.12, and playing)` : 'the master has no chains'}: it starts on the next bar.`); }
     }
   }
   d.startAt = at;
@@ -368,14 +368,17 @@ function armStart(d) {
   void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
 }
-/* Next chain: whole phrases left in deck o's chain after the one playing (dj.js chainLeft), from its last LIVE (the
-   first playing channel's place, its chain's phrases and its row), or null */
-function chainOf(o, t, bpm) {
+/* Next chain: when deck o's chain ends (dj.js chainEnd), from its last LIVE: the longest chain of the channels
+   playing (the song's section; a drum channel's short loop is not the chain), read at the middle of the ask, or null.
+   A LIVE older than LIVE_OLD_MS is not trusted (the poll stalled: the row would be a guess). */
+const LIVE_OLD_MS = 4000;
+function chainEndOf(o, t, bpm) {
   const l = o?.live;
-  if (!l?.chainPos || !l.chainLen || !l.rows) return null;
-  const c = [0, 1, 2, 3].find(c => (l.playing >> c) & 1 && l.chainPos[c] != null && l.chainLen[c] && l.rows[c] != null);
+  if (!l?.chainPos || !l.chainLen || !l.rows || t - (l.gotAt ?? -Infinity) > LIVE_OLD_MS) return null;
+  let c = null;
+  for (let k = 0; k < 4; k++) if ((l.playing >> k) & 1 && l.chainPos[k] != null && l.chainLen[k] && l.rows[k] != null && (c == null || l.chainLen[k] > l.chainLen[c])) c = k;
   if (c == null) return null;
-  return chainLeft(l.chainPos[c], l.chainLen[c], l.rows[c] & 15, t - ((l.askedAt ?? t) + (l.gotAt ?? t)) / 2, bpm);
+  return chainEnd(l.chainPos[c], l.chainLen[c], l.rows[c] & 15, ((l.askedAt ?? t) + (l.gotAt ?? t)) / 2, bpm, t);
 }
 function cancelStart(d) { d.chainSaid = false; cancelLater(d.startTimer); d.startTimer = 0; d.startAt = 0; clearTimeout(d.djTimer); }
 /* 0.9.98-dev.4: the deck on its FM-1's own keys, OP4 Play and OP5 Stop, lit as the deck (firmware/lsdj_djkeys.h).

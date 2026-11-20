@@ -53,15 +53,24 @@ export const startUnit = key => (START_ON.find(s => s[0] === key) ?? START_ON[2]
 export function startTime(phase, bpm, now, unit) {
   return !unit || phase == null ? now : nextOn(phase, bpm, now, unit);
 }
-/* "Next chain": how many whole phrases the reference deck's LSDj still plays in its chain after the one it plays now.
-   From its LIVE (0.9.98-dev.12): place p (0..15) of len phrases at phrase row `row`, read `ago` ms ago at bpm: the
-   phrases it has started since (the row read is half done), then what is left of the chain; past its end the next
-   chain is taken to be as long. null: not known (older firmware, not playing). A phrase is 16 rows (LSDj's H
-   command, a shorter phrase, is not seen). */
-export function chainLeft(p, len, row, ago, bpm) {
-  if (p == null || !len || row == null) return null;
-  const rows = row + 0.5 + Math.max(0, ago) * clampBpm(bpm) * 4 / 60000;
-  return len - 1 - mod(p + Math.floor(rows / 16), len);
+/* "Next chain": when the reference deck's LSDj's chain ends (the start of its next chain), from its LIVE
+   (0.9.98-dev.12): place p (0..15) of len phrases at phrase row `row`, read at readAt (ms), at bpm. The row read is
+   half done (+0.5 row), the time since the read counts at bpm (a row is 15000 / bpm ms); past the chain's end the next
+   chain is taken to be as long. null: not known. A phrase is 16 rows (LSDj's H command, a shorter phrase, is not seen). */
+export function chainEnd(p, len, row, readAt, bpm, now) {
+  if (p == null || !len || row == null || readAt == null) return null;
+  const rowMs = 15000 / clampBpm(bpm), total = 16 * len;
+  let left = total - (16 * mod(p, len) + (row & 15) + 0.5) - Math.max(0, now - readAt) / rowMs;   /* rows to the end, from now */
+  while (left <= 0) left += total;
+  return now + left * rowMs;
+}
+/* the start for "Next chain": the deck's bar line (the clock's: exact) nearest the chain's end as LIVE says it. The
+   LIVE estimate is good to about a row; the bar lines are exact, so a start is always on one, and a row that the read
+   has wrong by up to half a phrase still lands on the right one (adding whole phrases to the NEXT bar broke when the
+   two disagreed near a phrase's end: a whole phrase early or late). nextBar: the first bar line after now (ms). */
+export function chainStart(nextBar, bpm, end) {
+  const barMs = 4 * 60000 / clampBpm(bpm);
+  return end == null ? nextBar : nextBar + Math.max(0, Math.round((end - nextBar) / barMs)) * barMs;
 }
 /* what's left before a start at `at` (ms), at bpm: whole beats left, rounded up (1 on the last beat), and the bars */
 export function countIn(at, bpm, now) {
