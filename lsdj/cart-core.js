@@ -16,10 +16,10 @@ const sha = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', 
    this browser's LSDj files; files: dropped here); picks: the kit picks a project's own kits make; template: the first
    .sav's bytes (its LSDj settings go into the carts) */
 export const newState = () => ({songs: [], libRoms: [], fileRoms: [], kitFiles: [], picks: {}, rules: {}, template: null, built: new Set(), seq: 0, full: new Map()});
-/* which LSDj files the FM-1 knows fully (lsdj-rom.js profile 1: LSDj 9.3.9, 9.4.0, 9.4.2: SYNC, play state and
+/* which LSDj files the FM-1 knows fully (lsdj-rom.js profiles 1 and 3: LSDj 9.2.0 to 9.4.2: SYNC, play state and
    rows for the DJ layout, MIDI sync, cues); other versions run, without those. Checked once a file (by id). */
 export async function checkRoms(st) {
-  for (const r of [...st.libRoms, ...st.fileRoms]) if (!st.full.has(r.id)) st.full.set(r.id, (await findProfile(r.rom).catch(() => null))?.profile === 1);
+  for (const r of [...st.libRoms, ...st.fileRoms]) if (!st.full.has(r.id)) st.full.set(r.id, [1, 3].includes((await findProfile(r.rom).catch(() => null))?.profile));
 }
 const roms = st => { const m = new Map(); for (const r of [...st.libRoms, ...st.fileRoms]) if (!st.built.has(r.id)) m.set(r.id, r); return [...m.values()]; };
 const romEntry = (id, name, rom) => ({id, name, rom, slots: kitSlots(rom), version: S.lsdjVersion(rom), format: S.lsdjFormat(rom)});

@@ -3,7 +3,7 @@ import {readFileSync, mkdtempSync, writeFileSync, unlinkSync, rmdirSync} from 'n
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {BANK, SLOT_HEADER, crc32, identifyRom, programHash, listKits, sparsePack, planRom, buildSlot, parseSlot, romFromSlot} from '../lsdj/lsdj-rom.js';
+import {BANK, SLOT_HEADER, crc32, identifyRom, programHash, listKits, sparsePack, planRom, buildSlot, parseSlot, romFromSlot, codeHash, LSDJ_PROFILES, SLOT_ADDRS, SLOT_ADDR_AT} from '../lsdj/lsdj-rom.js';
 import {prepareLsdjFirmware} from '../lsdj/lsdj-firmware.js';
 import {checkPackage} from '../lsdj/install.js';
 import {Package, crc16} from '../vendor/fm1pkg.js';
@@ -60,7 +60,31 @@ assert.equal(parseSlot(badProfile, cap).error, 'layout');
   assert.deepEqual([parseSlot(p2, cap).cursorProfile, parseSlot(p2, cap).cursor, parseSlot(p2, cap).tempo], [2, 0xc41e, 0xc52a]);
   dv.setUint16(149, 0x8000, true); seal(); assert.equal(parseSlot(p2, cap).error, 'layout');
   p2[148] = 0; dv.setUint16(149, 0xc41e, true); seal(); assert.equal(parseSlot(p2, cap).error, 'layout');
-  p2[148] = 3; seal(); assert.equal(parseSlot(p2, cap).error, 'layout');
+  p2[148] = 3; seal(); assert.equal(parseSlot(p2, cap).error, 'layout');   /* profile 3 without its addresses */
+}
+{ /* profile 3 (0.9.98-dev.18): another LSDj with every helper, its addresses in the header (src/lsdj_slot.h); a
+     profile for this program (its title and code) builds it, and it reads back; an address outside its memory is refused */
+  const title = String.fromCharCode(...rom.subarray(0x134, 0x144)).replace(/\0.*$/, '');
+  const addr = {sync: 0x3fbd, armed: 0xc0e0, row: 0xc16c, live: 0xc529, songrow: 0xc200, chainpos: 0xc17c, songtab: 0x1290, period: 0xc952,
+    songtempo: 0x3fb4, screen: 0xc402, synclive: 0xcb64, syncmask: 0xcb6b, songcur: 0xc41f, chaintab: 0x2080, playtime: 0x3fb3};
+  const entry = {title, profile: 3, cursor: 0xc41e, tempo: 0xc52a, mask: [], codeHash: await codeHash(rom, []), addr};
+  LSDJ_PROFILES.push(entry);
+  try {
+    const {slot: s3} = await buildSlot(rom, [26, 40], cap), p = parseSlot(s3, cap);
+    assert.deepEqual([p.cursorProfile, p.cursor, p.tempo, p.addr], [3, 0xc41e, 0xc52a, addr], 'profile 3 reads back');
+    assert.equal(s3[148], 3);
+    SLOT_ADDRS.forEach(([n], i) => assert.equal(new DataView(s3.buffer).getUint16(SLOT_ADDR_AT + 2 * i, true), addr[n], n));
+    const bad = s3.slice(), dv = new DataView(bad.buffer), seal = () => dv.setUint32(252, crc32(bad.subarray(0, 252)), true);
+    for (const [n, v] of [['armed', 0xdffd], ['syncmask', 0xdfff], ['sync', 0x8000], ['songtab', 0x7c01], ['chaintab', 0x7801], ['screen', 0]]) {
+      const i = SLOT_ADDRS.findIndex(s => s[0] === n);
+      dv.setUint16(SLOT_ADDR_AT + 2 * i, v, true); seal(); assert.equal(parseSlot(bad, cap).error, 'layout', `${n} ${v.toString(16)}`);
+      dv.setUint16(SLOT_ADDR_AT + 2 * i, addr[n], true);
+    }
+    seal(); assert.equal(parseSlot(bad, cap).cursorProfile, 3);
+    bad[148] = 2; seal(); assert.equal(parseSlot(bad, cap).error, 'layout', 'profile 2 with profile 3\'s addresses');
+    entry.addr = {...addr, armed: 0xdffd};
+    await assert.rejects(buildSlot(rom, [26, 40], cap), /armed address doesn't fit/, 'never written out of its memory');
+  } finally { LSDJ_PROFILES.splice(LSDJ_PROFILES.indexOf(entry), 1); }
 }
 for (const size of [0, 8, 255, slot.length - 1]) assert.ok(parseSlot(slot.subarray(0, size), cap).error);
 const corrupt = slot.slice(); corrupt[1000] ^= 1; assert.equal(parseSlot(corrupt, cap).error, 'data');

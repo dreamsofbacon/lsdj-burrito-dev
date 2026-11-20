@@ -23,7 +23,9 @@ const isEmpty = bank => bank.every(b => b === 0xff);
 // The LSDj programs the FM-1 knows (src/lsdj_slot.h byte 148). Profile 1: a program with LSDj 9.3.9's addresses,
 // every helper (cursor FX, SEQ, tempo, cues, MIDI sync): 9.3.9, and 9.4.0 / 9.4.2 (0.9.98-dev.18: the same WRAM and
 // song addresses; checked on the actual firmware in the emulator: SEQ, the DJ link, auto SYNC, DJ keys, note mode,
-// cursor FX, Next chain, the start row). Profile 2: another LSDj whose cursor and tempo bytes
+// cursor FX, Next chain, the start row), and 9.4.1. Profile 3 (0.9.98-dev.18): LSDj 9.2.0 to 9.3.8, every helper,
+// with each version's own addresses (found by harness/lsdj_addr_find.mjs and passing those same emulator checks; 9.2.0,
+// song format 21, all but Next chain and the start row, whose test song is format 22). Profile 2: another LSDj whose cursor and tempo bytes
 // were found (harness/find_cursor.c, find_tempo.c): cursor-following FX and the LFO tempo only.
 // A program is its code banks (0-7, 1B-1F) with its palette colours (bank 1) and palette names (bank 1B)
 // blanked, so custom palettes and kit banks (including blank kit slots) keep the match.
@@ -31,12 +33,111 @@ const CODE_BANKS = [0, 1, 2, 3, 4, 5, 6, 7, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f];
 export const LSDJ_PROFILES = [
   {title: 'LSDj-v9.3.9', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
    codeHash: '56d3a06fa6a35013c4647fa01e547a2a1869f9e3eccea0f1cdda8a1ee029e4f9'},
-  {title: 'LSDj-v9.4.0', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
-   codeHash: 'ae3214b29f70b8c21352a1281ff591cbe61e2ec8f1ec6f300314979c1c7ffb5c'},
   {title: 'LSDj-v9.4.2', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
    codeHash: '7a7117377fffade614ec14f5abd0299c1f20f26b1cda2bb6d7dc6deb68a0df8e'},
-  {title: 'LSDj-v9.2.L', profile: 2, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
-   codeHash: '0f49d6ca387321749f44b2bd07a103eb58aad788f1e0c46971302d825e6fc1da'},
+  {title: 'LSDj-v9.4.1', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'c73950e35b4373e5a2adce0ee650a1cd5fef4e1f7ff1067f109e704dce0027a8'},
+  {title: 'LSDj-v9.4.0', profile: 1, cursor: 0xC41D, tempo: 0xC529, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'ae3214b29f70b8c21352a1281ff591cbe61e2ec8f1ec6f300314979c1c7ffb5c'},
+  {title: 'LSDj-v9.3.8', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'c952060999412bf883e68768b91ed67c69b2093b4face42934181532f4ad10f0',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.7', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: '5b9377c8017cd7f6e444ae2580d00e38e03151ad0bdbe5843024d2bb8a1a5baa',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.6', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: '5faab620cd310dfa9d360d3f4fd3add91e199dcf77bd2777649268fbd6423843',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.5', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'c1783b70b1400895bd43e033eb68b47a1f65f967fed249a5683e51d439baba63',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.4', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16a7, 0x17c0], [0x1b, 0x1707, 0x175c]],
+   codeHash: '5fc7b89ab795efe835d37236b0c2b939f2db6f77b1722c763294b8dbe5d145c5',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.3', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '8b603f5c18473c725ae00aaaa212c2cd162ffb186b2276838b8ac65e70d0fb65',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.2', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '39868ae16efccd8d88296cd91c3a5b99a56976bea05f4bc80f53eea966f74679',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.1', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '96d6fb126f11265a39a7c464ddd1369203b94cb30bdf80d60e5e80bf4b197c60',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.3.0', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'a17e8859d8d99aa92a3136b183f36b61d25f62e139e1521ea07dc4ffc33c5370',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.N', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '44cda98aaba1578774e9f9b2184659673db1a8782bfd5b731100124ac9594b50',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.M', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16bf, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'a473bbc4db0a67dea866322008b7063265fe277846550b91b1d9e3998024366d',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.L', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '0f49d6ca387321749f44b2bd07a103eb58aad788f1e0c46971302d825e6fc1da',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.K', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '893628bae779200ea08c594c248217c365f4f6fc134a8ea52389058e5720eda8',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.J', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '1bdf70266885c96e2134964d023e3804c10bdbf14e8bf8276cddf41397c2ae85',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC952, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.I', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '4a4cc0d6918b03682dd8914d32e49aa2e03e6830baa8f4512512e8ac0e8a84b9',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC951, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.H', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '9e2b514f3930072b4bfed9045144b9688df575830b810db47e1b9b6ca2f94a0a',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC951, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.G', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: 'ff9e637f9f6e67a836aa87053b5cf2ae336947677b5cb7d1f136fbdea73bb3cf',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB62, syncmask: 0xCB69, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.F', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '7142f1791eb1593d8bc645e0064acfc33b71199d4593be19f59cee7a1271eae8',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.E', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1b, 0x1707, 0x175c]],
+   codeHash: 'a1855a9ad64a0d8b2c58e760fe32611bc2f58069b6de0c0738fd66c534ec38ac',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.D', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16be, 0x17d8], [0x1b, 0x1707, 0x175c]],
+   codeHash: '2244d639eb282f0ac9974b6f944dc13c394b4cecc09c462e16511ab4fde09e93',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.C', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: '9feef58d56e5e7b383d248ff93c52f90cefb35148f699d09b67d8aec36400043',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB65, syncmask: 0xCB6C, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.B', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: '3d3dc7800461d9c072fdeda32a9a46908bffa3e6369e04fb6669324f9c549511',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.A', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: '873d23e1f4bdc786be3c608a1415d3080d252edf93fab6e6f3e2ed7bf3c7a998',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.9', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: '3961938f470ba9fce17df4ee14824069cde6554b700e1187d0fc4ef555957a28',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.8', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: '6725e82ae0eb292eea823234c963ea2682ae5e4f73c91cf5fff04ecffb2484ae',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.7', profile: 3, cursor: 0xC41E, tempo: 0xC52A, mask: [[0x1, 0x16d6, 0x17f0], [0x1b, 0x1704, 0x1759]],
+   codeHash: 'bc5cce336aa2a8b52ff796da9cedf4d94254903283476e47f99a58a05e584df8',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC529, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94F, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.6', profile: 3, cursor: 0xC41E, tempo: 0xC52B, mask: [[0x1b, 0x1704, 0x1759]],
+   codeHash: '0c102be5de98e9b82cd745eb69fd886c0640efba83a1dc932949437662feda22',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52A, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.5', profile: 3, cursor: 0xC41E, tempo: 0xC52B, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: 'c4ebf0f0a200a2a97725d17b56a145b42a632582c4d1603e1092553d7f40f1ec',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52A, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.4', profile: 3, cursor: 0xC41E, tempo: 0xC52B, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: 'e7161cb54a3d02f1f0d661768cecf77ad6a57e9ba9ed00d1976df080fe7f480f',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52A, songrow: 0xC200, chainpos: 0xC17C, period: 0xC950, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.3', profile: 3, cursor: 0xC41E, tempo: 0xC52B, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: '9e306a515beff666c3b5c6064bc6f34aa6fe501a24a4638d8bcdffe11baf8767',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52A, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94E, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.2', profile: 3, cursor: 0xC41E, tempo: 0xC52B, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: 'fc880f0c94477522fdfe674c24270bd87be430ad4a8fd35cee6eaadadb80a6df',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52A, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94E, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.1', profile: 3, cursor: 0xC41E, tempo: 0xC52F, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: '37273d1dd23a782de91047b5e6e32168c344cb49a9fb312d6549b32e070233c5',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52E, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94E, screen: 0xC402, synclive: 0xCB64, syncmask: 0xCB6B, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
+  {title: 'LSDj-v9.2.0', profile: 3, cursor: 0xC41E, tempo: 0xC52F, mask: [[0x1b, 0x16f3, 0x1748]],
+   codeHash: '02cf40467e2a2b2aef22e3a36257e1a9c08b0a1464622e7a36ba017076fffdd0',
+   addr: {armed: 0xC0E0, row: 0xC16C, live: 0xC52E, songrow: 0xC200, chainpos: 0xC17C, period: 0xC94D, screen: 0xC402, synclive: 0xCB63, syncmask: 0xCB6A, songcur: 0xC41F, sync: 0x3FBD, songtempo: 0x3FB4, songtab: 0x1290, chaintab: 0x2080, playtime: 0x3FB3}},
   {title: 'LSDj-v9.1.Caboy', profile: 2, cursor: 0xC464, tempo: 0xC575, mask: [[0x1, 0x16d7, 0x17f0], [0x1b, 0x16f0, 0x1748]],
    codeHash: 'a0b4d42d9cde5efbdb7d83a73d426f4592e3ea6b3be09ca1a7313430d30d066b'},
   {title: 'LSDj-v8.4.9', profile: 2, cursor: 0xC41A, tempo: 0xC537, mask: [],
@@ -46,9 +147,18 @@ export const LSDJ_PROFILES = [
   {title: 'LSDj-v4.6.2', profile: 2, cursor: 0xC0E8, tempo: 0xC4AF, mask: [],
    codeHash: '21b2ba9460d5faf7174a554889b904d7703df4667613ebc6be1c7379b7164b09'}
 ];
-/* the LSDj versions the FM-1 knows fully (profile 1), for messages: "LSDj 9.3.9, 9.4.0 or 9.4.2" */
-const FULL = LSDJ_PROFILES.filter(p => p.profile === 1).map(p => p.title.replace(/^LSDj-v/, ''));
-export const FULL_LSDJ = 'LSDj ' + (FULL.length > 1 ? FULL.slice(0, -1).join(', ') + ' or ' + FULL.at(-1) : FULL[0]);
+/* the LSDj versions the FM-1 knows fully (profiles 1 and 3), for messages: "LSDj 9.3.9, 9.4.0 or 9.4.2", or "LSDj 9.2.1 to 9.4.2" (more than 4) */
+const FULL = LSDJ_PROFILES.filter(p => p.profile === 1 || p.profile === 3).map(p => p.title.replace(/^LSDj-v/, ''))
+  .sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+export const FULL_LSDJ = 'LSDj ' + (FULL.length > 4 ? `${FULL[0]} to ${FULL.at(-1)}` : FULL.length > 1 ? FULL.slice(0, -1).join(', ') + ' or ' + FULL.at(-1) : FULL[0]);
+/* Profile 3 (0.9.98-dev.18, src/lsdj_slot.h): another LSDj with every helper, its addresses in the slot header: the
+   cursor and tempo at 149 / 151, these at 160 (u16 each, in this order). song: an offset in the 32 KiB song memory;
+   else WRAM. room: the bytes the firmware reads from it (the slot is refused if one doesn't fit). */
+export const SLOT_ADDRS = [['sync', 1, true], ['armed', 4], ['row', 4], ['live', 1], ['songrow', 4], ['chainpos', 4],
+  ['songtab', 0x400, true], ['period', 2], ['songtempo', 1, true], ['screen', 1], ['synclive', 1], ['syncmask', 2], ['songcur', 1],
+  ['chaintab', 0x800, true], ['playtime', 6, true]];
+export const SLOT_ADDR_AT = 160;
+const addrFits = ([, room, song], a) => Number.isInteger(a) && (song ? a >= 0 && a + room <= 0x8000 : a >= 0xc000 && a + room <= 0xe000);
 export async function codeHash(rom, mask) {
   if (rom.length < 0x20 * BANK) return null;
   const bytes = new Uint8Array(CODE_BANKS.length * (BANK + 1));
@@ -195,7 +305,12 @@ export async function buildSlot(rom, keepKits, capacity) {
   slot.fill(0xff, 20, 20 + SLOT_MAX_BANKS); slot.set(bankMap, 20);
   const profile = await findProfile(rom);
   slot[148] = profile?.profile ?? 0;
-  if (profile?.profile === 2) { v.setUint16(149, profile.cursor, true); v.setUint16(151, profile.tempo, true); }
+  if (profile?.profile >= 2) { v.setUint16(149, profile.cursor, true); v.setUint16(151, profile.tempo, true); }
+  if (profile?.profile === 3) SLOT_ADDRS.forEach((s, i) => {
+    const a = profile.addr?.[s[0]];
+    if (!addrFits(s, a)) throw Error(`${profile.title}: its ${s[0]} address doesn't fit (${a}).`);
+    v.setUint16(SLOT_ADDR_AT + 2 * i, a, true);
+  });
   let at = 0;
   lengths.forEach((n, i) => {
     v.setUint32(table + 8 * i, at, true); v.setUint32(table + 8 * i + 4, n, true);
@@ -217,7 +332,13 @@ export function parseSlot(w, capacity) {
   if (String.fromCharCode(...w.subarray(0, 8)) !== 'LSDJSLOT' || (version !== 1 && version !== 2) ||
       v.getUint32(252, true) !== crc32(w.subarray(0, 252))) return {error: 'header'};
   const cursor = v.getUint16(149, true), tempo = v.getUint16(151, true), wram = a => a >= 0xc000 && a <= 0xdfff;
-  if (w[148] > 2 || (w[148] === 2 ? !wram(cursor) || (tempo && !wram(tempo)) : cursor || tempo)) return {error: 'layout'};
+  if (w[148] > 3 || (w[148] >= 2 ? !wram(cursor) || (tempo && !wram(tempo)) : cursor || tempo)) return {error: 'layout'};
+  const addr = {};
+  for (const [i, s] of SLOT_ADDRS.entries()) {
+    const a = v.getUint16(SLOT_ADDR_AT + 2 * i, true);
+    if (w[148] === 3 ? !addrFits(s, a) : a) return {error: 'layout'};
+    if (w[148] === 3) addr[s[0]] = a;
+  }
   const logical = v.getUint16(10, true), stored = v.getUint16(12, true), kits = v.getUint16(14, true);
   if (logical < 2 || logical > SLOT_MAX_BANKS || (logical & (logical - 1)) || !stored || kits > stored || stored > logical)
     return {error: 'layout'};
@@ -246,8 +367,8 @@ export function parseSlot(w, capacity) {
   const present = map.filter(m => m !== 0xff);
   if (present.length !== stored || present.some((m, i) => m !== i)) return {error: 'layout'};
   if (v.getUint32(16, true) !== crc32(w.subarray(SLOT_HEADER, total))) return {error: 'data'};
-  return {version, logical, stored, kits, cursorProfile: w[148], cursor: w[148] === 2 ? cursor : w[148] ? 0xc41d : 0,
-    tempo: w[148] === 2 ? tempo : 0, map: map.slice(0, logical), dataOff, starts, lengths, total};
+  return {version, logical, stored, kits, cursorProfile: w[148], cursor: w[148] >= 2 ? cursor : w[148] ? 0xc41d : 0,
+    tempo: w[148] >= 2 ? tempo : 0, addr: w[148] === 3 ? addr : null, map: map.slice(0, logical), dataOff, starts, lengths, total};
 }
 
 // Recover exactly what the emulator can read, not sample banks previously omitted

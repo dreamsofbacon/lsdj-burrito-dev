@@ -195,7 +195,7 @@ async function chooseRom(file, device = false, {cart = null, keep = true, readCr
     rom = bytes; versions = catalog; ({template, metadata} = loaded); romName = c ? cartName(c) : file.name; romInfo = info;
     say(`${romName} (${info.title}): ${info.tested ? 'a tested LSDj build' :
       info.sameProgram ? 'a tested LSDj program with different samples' : 'an untested LSDj build'}. ` +
-      (info.cursorProfile === 1 ? `Known ${info.title} program, every helper (custom palettes and kits are fine): effects follow the cursor; SEQ, tempo, cues, MIDI sync and the DJ layout work. ` :
+      (info.cursorProfile === 1 || info.cursorProfile === 3 ? `Known ${info.title} program, every helper (custom palettes and kits are fine): effects follow the cursor; SEQ, tempo, cues, MIDI sync and the DJ layout work. ` :
         info.cursorProfile === 2 ? `Known ${info.title} program: effects follow the cursor and the LFO follows the tempo; SEQ live mode, tempo editing, cues and MIDI sync need ${FULL_LSDJ}. ` :
         'Cursor-following FX unavailable for this program: FX targets ALL channels. ') +
       (device ? 'All installed kits are ticked; untick any you can do without. ' : '') +
