@@ -20,6 +20,8 @@ import {startClock, startRelay, clampBpm} from './midiclock.js';
 import {mountDj, setDjHooks, djShown, djDevicesChanged, rememberSav, djLive, djHearChanged} from './dj-ui.js';
 import {Hear} from './usb-audio.js';
 import {romFromSlot, FULL_LSDJ} from './lsdj-rom.js';
+import {savKitReport} from './lsdj-usage.js';
+import {cartridges, matchCart, cartName} from './cartridges.js';
 import {ScreenMirror} from './screen.js';
 import {initPresets, presetsShown, readPresetList} from './presets-ui.js';
 import {popOut, onPopChange, isOut, docs, seen, anyVisible, visibleWindow} from './popout.js';
@@ -1547,15 +1549,29 @@ $('import').onchange = e => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const payload = confirmSaveImport(bytes, file.name, message => confirm(message));
     if (!payload) return say('save-status', 'Import cancelled. Nothing was sent.');
+    say('save-status', 'Checking the songs against the kits on the FM-1…');
+    const kits = await savKitsOnFm1(payload);
+    if (kits.ask && !confirm(kits.ask)) return say('save-status', 'Import cancelled. Nothing was sent.');
     const note = bytes.length > SAVE_SIZE ? ' The final 16 bytes were excluded with your confirmation; the original file is unchanged.' : '';
     say('save-status', 'Backing up the songs on the FM-1 first…');
     await backupFirst(link, current, {progress: progress()});
     say('save-status', 'Sending songs to the FM-1…' + note);
     await link.importSave(payload, progress());
     sentSav(payload, file.name);
-    say('save-status', `Imported ${file.name}. LSDj restarted with it.${note}`, 'ok');
+    say('save-status', `Imported ${file.name}. LSDj restarted with it.${note}${kits.note}`, kits.ask ? 'warn' : 'ok');
   });
 };
+
+/* Songs alone to the FM-1 play its LSDj's kits: a .sav holds no samples, a song names kits by number (Colin:
+   imported songs played other samples). Its LSDj: the cartridge kept here that its CART_INFO matches (nothing read
+   from the FM-1). -> {ask: a question before sending, or null; note: for the status line} */
+async function savKitsOnFm1(sav) {
+  let m = null, list = [];
+  try { const info = await link.cartridgeInfo(); list = await cartridges(); m = await matchCart(info.dataCrc, list); } catch { /* older firmware: can't tell */ }
+  if (!m) return {ask: null, note: " Its kits weren't checked: the LSDj on the FM-1 isn't one of your cartridges in this browser, so the songs play whatever kits it has."};
+  return savKitReport(sav, {name: cartName(m.cart), bytes: m.cart.bytes, kits: m.kits},
+    list.filter(c => c.id !== m.cart.id).map(c => ({name: cartName(c), bytes: c.bytes})));
+}
 
 /* ---------- colours ---------- */
 function buildTheme() {

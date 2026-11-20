@@ -8,6 +8,9 @@
 // sample + 1, the low digit KIT2's sample + 1, 0 = none (0x43: KIT1 sample 3 with KIT2 sample 2).
 // "maybe": a note that a chain transpose or the instrument's table may move to another sample (not
 // worked out: the sample the song would play is not certain).
+import {parseSav, songBytes} from './lsdj-sav.js';
+import {kitSlots} from './lsdj-kit.js';
+
 const SONG = 0x1290, CHAIN_PHRASES = 0x2080, CHAIN_TRANSPOSES = 0x2880, PHRASE_INSTR = 0x7000;
 const INSTR = 0x3080, INSTR_NAMES = 0x1e7a, TABLE_TRANSPOSES = 0x3480;
 const KIT = 2;
@@ -104,4 +107,48 @@ export function bestRom(roms, usage) {
   const fits = roms.map(r => ({...r, fit: romFit(r.slots, usage)}))
     .sort((a, b) => a.fit.kits.length - b.fit.kits.length || a.fit.empty.length - b.fit.empty.length);
   return {best: fits[0] ?? null, fits};
+}
+
+/* Before songs alone go to an FM-1 (Save › Import a .sav…): a .sav holds no samples, a song names kits by number,
+   so each plays whatever kit the FM-1's LSDj has at that number (Colin: imported songs played other samples).
+   songs: [{name, song}]; slots: the FM-1's kit slots (lsdj-kit.js kitSlots, the kits not installed as empty);
+   others: [{name, slots}] the user's LSDj files. A wrong kit can't always be told (another kit of that number with
+   samples enough); what can: a kit the songs play that is empty or missing there, or samples past its last one.
+   -> {problems: [{kit, why: 'no kit' | 'empty' | 'short', last, samples, songs}], fits: [names of others with none]} */
+const kitProblems = (slots, usage) => {
+  const out = [];
+  for (const [kit, m] of usage) {
+    const sure = [...m].filter(([, e]) => e.songs.size), songs = [...new Set(sure.flatMap(([, e]) => [...e.songs]))];
+    if (!sure.length) continue;
+    const s = slots[kit], last = s && !s.empty ? Math.max(-1, ...s.kit.samples.map(x => x.index)) : -1;
+    const past = sure.filter(([i]) => i > last).map(([i]) => i).sort((a, b) => a - b);
+    const why = !s ? 'no kit' : s.empty ? 'empty' : past.length ? 'short' : null;
+    if (why) out.push({kit, why, last, samples: past, songs});
+  }
+  return out.sort((a, b) => a.kit - b.kit);
+};
+export function savKitCheck(songs, slots, others = []) {
+  const usage = usageAcross(songs);
+  return {problems: kitProblems(slots, usage), fits: others.filter(o => !kitProblems(o.slots, usage).length).map(o => o.name)};
+}
+/* the same for a whole .sav (its open song and saved songs) in words. fm1: {name, bytes (its LSDj), kits (the banks
+   installed: lsdj-rom.js, the rest read as empty)}; others: [{name, bytes}]. -> {ask: a question before sending, or
+   null when every kit is there; note: for the status line} */
+export function savKitReport(sav, fm1, others = []) {
+  const s = parseSav(sav), songs = [], open = s.songs.find(x => x.slot === s.active);
+  songs.push({name: open?.name || 'the open song', song: s.working});
+  for (const x of s.songs) if (x !== open) try { songs.push({name: x.name || '(no name)', song: songBytes(s, x.slot)}); } catch { /* unreadable: skipped */ }
+  const slots = kitSlots(fm1.bytes).map(k => !k.empty && fm1.kits && !fm1.kits.includes(k.bank) ? {...k, empty: true, kit: null} : k);
+  const {problems, fits} = savKitCheck(songs, slots, others.map(o => ({name: o.name, slots: kitSlots(o.bytes)})));
+  if (!problems.length) return {ask: null, note: ` Every kit its songs play is on the FM-1 (${fm1.name}).`};
+  const hx = n => n.toString(16).toUpperCase().padStart(2, '0');
+  const few = n => n.length > 4 ? `${n.slice(0, 4).join(', ')} and ${n.length - 4} more` : n.join(', ');
+  const lines = problems.map(p => p.why === 'short'
+    ? `• kit ${hx(p.kit)} ${slots[p.kit].kit.name} has ${p.last + 1} sample${p.last ? 's' : ''}; they play more: ${few(p.songs)}`
+    : `• kit ${hx(p.kit)} ${p.why === 'empty' ? 'is empty' : "isn't"} on it: ${few(p.songs)}`);
+  const fix = fits.length
+    ? `${fits[0]} (one of your LSDj files) has every kit they play: in the DJ crate, add the .sav and choose it, then load the card to send the LSDj and songs together.`
+    : 'A .sav holds no samples: the songs need the LSDj (with its kits) they were made with. In the DJ crate, add the .sav with that LSDj to send them together.';
+  return {ask: `These songs were likely made with other kits than the FM-1's LSDj (${fm1.name}) has, so some notes will play other samples or none:\n${lines.join('\n')}\n\n${fix}\n\nSend the songs anyway?`,
+    note: ` Some songs play kits the FM-1's LSDj (${fm1.name}) doesn't have${fits.length ? `; ${fits[0]} has them` : ''}.`};
 }

@@ -3,7 +3,8 @@
 // ROM and made-up songs (node tests/lsdj-usage.mjs).
 import assert from 'node:assert/strict';
 import {kitSlots, parseKit, BANK, MAX_SAMPLE_SPACE} from '../lsdj/lsdj-kit.js';
-import {kitUsage, usageAcross, romFit, bestRom} from '../lsdj/lsdj-usage.js';
+import {kitUsage, usageAcross, romFit, bestRom, savKitCheck, savKitReport} from '../lsdj/lsdj-usage.js';
+import {buildSav, SAV_SIZE} from '../lsdj/lsdj-sav.js';
 
 /* a kit bank: name, and samples of the given byte lengths named S0, S1, ... */
 function kit(name, lengths) {
@@ -93,4 +94,30 @@ assert.equal(songsFor(0, 4), undefined);
   assert.equal(best.name, 'two'); assert.deepEqual(fits.map(f => [f.name, f.fit.kits.length]), [['two', 1], ['one', 2]]);
 }
 
-console.log('PASS lsdj-usage: kit slots (empty slots counted), kit samples, songs -> KIT1/KIT2 samples, last instrument kept, transposes and tables maybe, unplayed phrases ignored, across songs, LSDj fit and best of several');
+
+/* songs alone to an FM-1 (Import a .sav…): the kits they play that its LSDj doesn't have, and the LSDj files that do */
+{
+  const c = song();
+  instr(c, 0, 2, 2, 7);                                           /* KIT: slot 2 (empty) + kit 7 (none) */
+  c[0x1290] = 0; c[0x2080] = 0; step(c, 0, 0, 0x11, 0);
+  const songs = [{name: 'A', song: a}, {name: 'B', song: b}];
+  const r1 = savKitCheck(songs, slots);
+  assert.deepEqual(r1.problems.map(p => [p.kit, p.why, p.last, p.samples, p.songs]), [[1, 'short', 0, [1, 4], ['A', 'B']]]);   /* VOX has 1 sample */
+  const rom3 = rom.slice(); rom3.set(kit('VOX', [0x10, 0x10, 0x10, 0x10, 0x10]), 9 * BANK);
+  assert.deepEqual(savKitCheck(songs, slots, [{name: 'one', slots}, {name: 'five', slots: kitSlots(rom3)}]).fits, ['five']);
+  assert.deepEqual(savKitCheck([{name: 'C', song: c}], slots).problems.map(p => [p.kit, p.why, p.songs]), [[2, 'empty', ['C']], [7, 'no kit', ['C']]]);
+  assert.deepEqual(savKitCheck([{name: 'A', song: a}], kitSlots(rom3)).problems, []);   /* every kit and sample there */
+
+  /* a whole .sav: B open, A saved (the open song checked as it is) */
+  const blank = new Uint8Array(SAV_SIZE); blank[0x813e] = 0x6a; blank[0x813f] = 0x6b;
+  const sav = buildSav(blank, b, [{slot: 0, name: 'BEATS', song: b}, {slot: 1, name: 'ACID', song: a}], 0);
+  const rep = savKitReport(sav, {name: 'My LSDj', bytes: rom, kits: [8, 9, 12]}, [{name: 'Five', bytes: rom3}]);
+  assert.match(rep.ask, /other kits than the FM-1's LSDj \(My LSDj\)/);
+  assert.match(rep.ask, /• kit 01 VOX has 1 sample; they play more: BEATS, ACID\n/);
+  assert.match(rep.ask, /Five \(one of your LSDj files\) has every kit they play/);
+  assert.match(rep.note, /; Five has them\.$/);
+  /* VOX not installed (left out of the FM-1): empty there */
+  assert.match(savKitReport(sav, {name: 'My LSDj', bytes: rom, kits: [8, 12]}).ask, /• kit 01 is empty on it: BEATS, ACID\n\nA \.sav holds no samples/);
+  assert.deepEqual(savKitReport(sav, {name: 'Five', bytes: rom3, kits: [8, 9, 12]}), {ask: null, note: ' Every kit its songs play is on the FM-1 (Five).'});
+}
+console.log('PASS lsdj-usage: kit slots (empty slots counted), kit samples, songs -> KIT1/KIT2 samples, last instrument kept, transposes and tables maybe, unplayed phrases ignored, across songs, LSDj fit and best of several, the kits of a .sav checked against an FM-1 (Import a .sav…)');
