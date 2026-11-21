@@ -8,6 +8,7 @@ import {kitSlots, putKit} from './lsdj-kit.js';
 import {romFit} from './lsdj-usage.js';
 import {cartridges, cartName, addCartridge, saveKitChoice, installCart, rememberInstallCart, notePrint, dataCrcOf} from './cartridges.js';
 import {cartPicker, mountCarts} from './carts-ui.js';
+import {mountStudio} from './studio-ui.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
@@ -250,6 +251,7 @@ window.addEventListener('hashchange', () => void reopen());
   $('rom-step').querySelector('.actions').prepend(el('div', {className: 'action'}, el('p', {}, el('b', {textContent: 'Use one of my cartridges'})),
     el('p', {className: 'hint', textContent: 'An LSDj you used before, kept in this browser (Cartridges), with the kits you chose for it.'}), pick));
   mountCarts($('carts'));
+  void mountStudio($('studio'));
   void reopen();
 }
 /* Songs & kits › Your LSDj files and kits › Load (sets-ui.js): a saved .kit into the first empty kit slot of the

@@ -8,7 +8,7 @@
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
 <link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/backups.js"><link rel="modulepreload" href="lsdj/cartridges.js"><link rel="modulepreload" href="lsdj/carts-ui.js"><link rel="modulepreload" href="lsdj/choose-lsdj.js"><link rel="modulepreload" href="lsdj/choose-fm1.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
 <link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
-<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
+<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/studio-ui.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
 if (location.pathname.startsWith('/lsdj-burrito-dev/')) { document.documentElement.classList.add('devpage');
@@ -313,6 +313,38 @@ body.popped .dj-fx{padding:14px 18px;overflow:auto;scrollbar-width:thin}
 /* the crate (lsdj/crate-ui.js): a strip of cards under the console; a deck takes a dropped card, and shows a cover while it loads */
 .dj-crate{margin:8px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--card2)}
 .crate-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+/* the cartridge studio (lsdj/studio-ui.js): drop zone, the LSDj shelf, loose songs on the left, cartridges on the right */
+#studio.drop{outline:3px dashed var(--accent);outline-offset:4px}
+#studio.busy .studio-grid{opacity:.6;pointer-events:none}
+.studio-drop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0;padding:14px;border:2px dashed var(--line);border-radius:12px}
+#studio.empty .studio-drop{padding:36px 14px;justify-content:center;font-size:1.1em}
+.studio-shelf{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;padding:0}
+.studio-tile{display:flex;flex-direction:column;align-items:center;min-width:76px;padding:6px 10px;border-radius:6px 3px 6px 6px;background:#c9c6bd;color:#2a2925;border:1px solid #0003}
+.studio-tile .hint,.studio-tile .ok{color:inherit;font-size:.75em}
+.studio-tile.base{outline:2px solid var(--accent)}
+.studio-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.studio-pool.over{outline:2px dashed var(--accent);outline-offset:4px}
+.studio-songs{list-style:none;margin:6px 0;padding:0;display:grid;gap:4px}
+.studio-song{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:grab}
+.studio-song.missing{border-color:var(--bad,#c0453a)}
+.studio-song.dragging{opacity:.45}
+.studio-song.over{box-shadow:0 -3px 0 var(--accent)}
+.studio-song-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.studio-grip{color:var(--muted);cursor:grab}
+.studio-from{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-slot{font-size:.75em;color:var(--muted)}
+.studio-song button{min-height:0;padding:1px 7px}
+.studio-link{background:none;border:0;text-decoration:underline;color:var(--accent);cursor:pointer}
+.studio-kits-line{font-size:.85em}
+.studio-kits{margin-top:4px;display:grid;gap:3px}
+.studio-cart{margin:8px 0;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--card) 85%,#000)}
+.studio-cart.over{outline:2px dashed var(--accent)}
+.studio-empty{padding:14px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+.studio-grid>*,.studio-cart,.studio-songs>li{min-width:0}
+.studio-song select{width:auto;max-width:9em;min-height:0;padding:2px 6px;font-size:.85em}
+.studio-song .cm-kitpick{max-width:100%}
+.studio-song-name{overflow-wrap:anywhere}
+@media (max-width:800px){.studio-grid{grid-template-columns:1fr}}
 /* the cart maker (lsdj/cart-maker.js): a panel over the DJ layout, songs on the left, the carts on the right */
 .cart-maker{position:fixed;inset:3vh 3vw;z-index:60;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:14px;color:var(--ink);
   background:var(--card);border:1px solid var(--line);box-shadow:0 20px 60px #000c}
@@ -1220,7 +1252,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <header class="top"><div class="top-in">
 <a class="brand" href="#home">LSDJ Burrito<small>by Dreamy_bacon</small></a>
 <nav class="page-nav" aria-label="Main">
-<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#carts" data-view="carts">Cartridges</a><a href="#songtools" data-view="songs">Songs &amp; kits</a><a href="#emulator-sec" data-view="try">Try it</a>
+<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#studio" data-view="studio">Studio</a><a href="#carts" data-view="carts">Cartridges</a><a href="#songtools" data-view="songs">Songs &amp; kits</a><a href="#emulator-sec" data-view="try">Try it</a>
 </nav>
 <button id="install-app" class="chip install-chip" type="button" title="Install LSDJ Burrito as an app: it opens in its own window and works offline" hidden>Install app</button>
 <a id="conn-chip" class="chip" href="#connect">Not connected</a>
@@ -1576,6 +1608,14 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <section id="songtools-sec">
 <h2>Songs &amp; kits</h2>
 <div id="songtools"></div>
+</section>
+</div>
+
+<!-- ============ STUDIO ============ -->
+<div class="view" data-view="studio" hidden>
+<section id="studio-sec">
+<h2>Cartridge studio</h2>
+<div id="studio"></div>
 </section>
 </div>
 

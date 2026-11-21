@@ -166,3 +166,63 @@ export function build(st, titles = []) {
       kib: Math.ceil(b.plan.needed / 1024), fits: b.plan.fits, warnings: b.warnings};
   });
 }
+
+/* ---- the Studio: carts the user arranges by hand (studio-ui.js) ---- */
+
+/* The LSDj a studio cart is built with: the one chosen, else the one the page builds with (req.baseId) when it opens
+   every song of the cart, else one that does (the FM-1's fully known LSDj first, then the oldest new enough); else the
+   base, with the songs it can't open marked. -> {rom, auto, opensAll} */
+function homeFor(st, list, baseId, cart, formats) {
+  const opens = r => formats.every(f => S.opens(r.format, f));
+  const chosen = cart.lsdjId && list.find(r => r.id === cart.lsdjId);
+  if (chosen) return {rom: chosen, auto: false, opensAll: opens(chosen)};
+  const base = list.find(r => r.id === baseId) ?? list[0];
+  if (!base) return {rom: null, auto: true, opensAll: false};
+  if (opens(base)) return {rom: base, auto: true, opensAll: true};
+  const openers = list.filter(r => r.format != null && opens(r)).sort((a, b) => (st.full.get(b.id) ? 1 : 0) - (st.full.get(a.id) ? 1 : 0) || a.format - b.format);
+  return openers.length ? {rom: openers[0], auto: true, opensAll: true} : {rom: base, auto: true, opensAll: false};
+}
+
+/* What the Studio shows. req: {carts: [{id, lsdjId | null, songIds}], choices: {madeWith, kitPick}, baseId}
+   -> view()'s {songs, roms, kitFiles, baseId, capacity}, and carts: [{id, lsdj: {id, name, version, full, auto, opensAll},
+   songs: [{id, name, blocks, format, tooNew}], kits, kib, blocks, lost: [text], leftOut: [names], fits}] (one per cart) */
+export function studioView(st, req, capacity) {
+  const out = view(st, {ticked: [], choices: req.choices, baseId: req.baseId, plan: 'split'}, capacity);
+  const list = roms(st), choices = {madeWith: req.choices?.madeWith ?? {}, kitPick: {...st.picks, ...(req.choices?.kitPick ?? {})}};
+  const resolved = S.resolveSongs(st.songs, list, st.kitFiles, choices), byId = new Map(resolved.map(r => [r.id, r]));
+  const blocks = new Map(st.songs.map(s => [s.id, s]));
+  for (const r of resolved) r.blocks = blocks.get(r.id).blocks ??= S.blocksOf(r.song);
+  st.studio = new Map();
+  out.carts = (req.carts ?? []).map(c => {
+    const entries = (c.songIds ?? []).map(id => byId.get(id)).filter(Boolean);
+    const home = homeFor(st, list, out.baseId, c, entries.map(e => S.songFormat(e.song)));
+    const lsdj = home.rom && {id: home.rom.id, name: home.rom.name, version: S.versionText(home.rom.version), full: !!st.full.get(home.rom.id), auto: home.auto, opensAll: home.opensAll};
+    const songs = entries.map(e => ({id: e.id, name: e.name, blocks: e.blocks, format: S.songFormat(e.song), tooNew: !!home.rom && !S.opens(home.rom.format, S.songFormat(e.song))}));
+    if (!home.rom || !entries.length) return {id: c.id, lsdj, songs, kits: 0, kib: 0, blocks: 0, lost: [], leftOut: [], fits: true};
+    const ctx = S.setContext(home.rom.rom, capacity), p = S.planMost(entries, ctx);
+    st.studio.set(c.id, {plan: p, ctx, lsdj: home.rom});
+    return {id: c.id, lsdj, songs, kits: p.kits.size, kib: Math.ceil(p.bytes / 1024), blocks: p.blocks,
+      lost: p.lost.map(l => `${l.song}: kit ${hex(l.kit)}${l.name ? ` (${l.name})` : ''}`), leftOut: p.leftOut.map(e => e.name), fits: !p.lost.length && !p.leftOut.length && !songs.some(s => s.tooNew)};
+  });
+  return out;
+}
+
+/* "Sort them for me": the songs (ids) planned into as few carts as it takes, per LSDj: -> [{lsdjId, songIds}] */
+export function autoSort(st, req, capacity) {
+  const v = view(st, {ticked: req.songIds, choices: req.choices, baseId: req.baseId, plan: 'split'}, capacity);
+  return (st.last?.plans ?? []).map(p => ({lsdjId: p.lsdj.id, songIds: p.entries.map(e => e.id)})).filter(c => c.songIds.length && v.plans.length);
+}
+
+/* the carts of the last studioView, built: ids: which ones; titles: their names -> [{id, title, rom, sav, lsdj, songs, kits, kib, fits, warnings}] */
+export function buildStudio(st, ids, titles = {}) {
+  const out = [];
+  for (const id of ids) {
+    const p = st.studio?.get(id);
+    if (!p) continue;
+    const b = S.buildSet(p.plan, p.ctx, st.template), title = titles[id] || 'Cart';
+    out.push({id, title, rom: b.rom, sav: b.sav, lsdj: S.versionText(p.lsdj.version), songs: b.songs.map(s => s.name), kits: b.kits.length,
+      kib: Math.ceil(b.plan.needed / 1024), fits: b.plan.fits, warnings: b.warnings});
+  }
+  if (!out.length) throw new SavError('Nothing to build: put some songs in a cartridge, with an LSDj to build it with.');
+  return out;
+}
