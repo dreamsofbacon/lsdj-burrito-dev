@@ -2,7 +2,7 @@
 // The page: connect to the FM-1's running LSDJ Burrito firmware (lsdj/link.js)
 // for live effects, songs, colours and settings. Never writes firmware.
 import {startGamepad, loadMaps, mapFor, saveMap, loadPick, savePick, assign, takenFrom, isDefaultMap, defaultMapFor, inputName, GB_ORDER, SLOTS} from './gamepad.js';
-import {Link, midiPorts, findFm1s, LinkError, SAVE_SIZE, CHUNK, crc32, sameFm1} from './link.js';
+import {Link, midiPorts, findFm1s, LinkError, SAVE_SIZE, CHUNK, crc32, sameFm1, resetCause} from './link.js';
 import {confirmSaveImport} from './save-file.js';
 import {mountSongsUi, setSongsHooks, drawSongsDevices, songsState} from './songs-ui.js';
 import {showDeviceTheme, setMatching, matching} from './page-theme.js';
@@ -273,11 +273,19 @@ async function checkRestarts() {
     restartChecked.add(d);
     let r = null;
     try { r = await l.restartInfo(); } catch { continue; }
-    if (!r?.why) continue;
+    const cause = resetCause(r);
+    if (!cause) continue;
+    const who = `FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware})`;
+    /* every FM-1's last start goes in the Log, with its reset cause (stability, 2026-11-21: FM-1s restarted on
+       their own while idle and came back with CPU1 off, R1, and nothing said why); only an unplanned one warns */
     const hex = n => `0x${(n >>> 0).toString(16).toUpperCase().padStart(8, '0')}`, c = r.crash;
-    const what = r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)})`
-      : 'the watchdog (CPU0 stopped answering)';
-    const text = `FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware}) restarted by itself: ${what}. It runs LSDj on CPU0 now (R0 on its CPU meter; the sound may crackle) until it's turned off and on.`;
+    /* (the last crash kept in its RAM, said even when this start isn't counted as one: the reset cause register may
+       still say power-on after a crash, and the firmware then took it for a cold start) */
+    const kept = c ? `; crash record: ${c.count} since power-on, the last at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running)` : '';
+    if (['on', 'planned', 'button'].includes(cause.kind)) { logEvent(`${who} started: ${cause.text}${kept}.`); continue; }
+    const what = r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)}); ${cause.text}`
+      : cause.text;
+    const text = `${who} restarted by itself: ${what}. If its CPU meter shows R0 or R1, LSDj runs on CPU0 now (the sound may crackle) until it's turned off and on.`;
     logEvent(text);
     if (connected && !virtual && sameDev(d, current)) say('device', text, 'warn');
   }

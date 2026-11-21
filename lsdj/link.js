@@ -443,6 +443,25 @@ export function infoFrom(d) {
     build: d.length >= 39 ? rd32(d, 35) : null};   /* 0.9.98-dev.9: the build ID (template.json build_id); null before */
 }
 
+/* The reset cause restartInfo() carries (P3_RST_SRC p3, RST_SRC rst, as the FM-1 read them at boot) in words:
+   {kind, causes, text}. kind: 'crash' / 'watchdog' (from why), 'power' (its supply dipped: VDDIO or 1.2 V low, VCM),
+   'restart' (the firmware restarted itself with no crash record: P33 soft reset), 'planned' (a core reset: an
+   install, an LSDj swap), 'button' (long press), 'on' (a plain power-on), 'unknown'. Colin's FM-1s restarted
+   on their own while idle (2026-11-21) and came back with CPU1 off (R1): this names what reset them. */
+const P3_BITS = ['power-on', 'VDDIO low', 'watchdog', 'VCM', 'long press', '1.2 V low', 'soft reset (P33)'];
+export function resetCause(r) {
+  if (!r) return null;
+  const p3 = r.p3 & 0x7F, causes = P3_BITS.filter((_, i) => (p3 >> i) & 1);
+  if ((r.rst >> 5) & 1) causes.push('core reset');
+  const kind = r.why === 'crash' ? 'crash' : r.why === 'watchdog' ? 'watchdog'
+    : p3 & (2 | 8 | 32) ? 'power' : p3 & 16 ? 'button' : p3 & 64 ? 'restart' : (r.rst >> 5) & 1 ? 'planned' : p3 & 1 ? 'on' : 'unknown';
+  const said = {power: 'its supply dipped (a brown-out: the USB power or the battery sagged)', button: 'the power button was held',
+    restart: 'the firmware restarted itself with no crash record (the emulator stopped with an error, or an update)',
+    planned: 'a planned restart (an install or an LSDj swap)', on: 'it was switched on', unknown: 'nothing it can name',
+    crash: 'a crash', watchdog: 'the watchdog (CPU0 stopped answering)'}[kind];
+  return {kind, causes, text: `${said}; reset cause ${causes.join(', ') || 'none'} (P3_RST_SRC 0x${p3.toString(16).padStart(2, '0')}, RST_SRC 0x${(r.rst >>> 0).toString(16)})`};
+}
+
 /* An FM-1 known again on new ports (Windows numbers them again when it comes back, and its port name can change:
    "Felucca", "3 - Felucca"): among these candidates, the one whose INFO (infoOf(x) -> {title, firmware, saveCrc})
    says what `info` said, the songs' checksum deciding between two of the same; else null (the user chooses).

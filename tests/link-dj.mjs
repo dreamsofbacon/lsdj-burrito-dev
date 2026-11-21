@@ -3,7 +3,7 @@
 // firmware has sent (11 effect words, 17, + battery, + the 0.9.98 bytes), VOLUME_SET, SEQ_SET and SONG_ROWS,
 // and what older firmware (status 1) gives. A pretend FM-1; no device.
 import assert from 'node:assert/strict';
-import {Link, OP} from '../lsdj/link.js';
+import {Link, OP, resetCause} from '../lsdj/link.js';
 
 function fake(answer) {
   const sent = [];
@@ -90,4 +90,17 @@ for (const [name, d, words, batt] of [
 { const {link} = fake(() => [0, [1, 2, 3]]);
   await assert.rejects(link.restartInfo(), /Invalid restart/); }
 
-console.log('PASS link DJ: LIVE at every length (11 / 17 words, battery, 0.9.98 rows, song rows, SYNC, SEQ, volume), VOLUME_SET, SEQ_SET, SONG_ROWS, SYNC_SET (ok, playing, no), IDENTIFY, RESTART, older firmware');
+/* resetCause: the reset cause in words (stability, 2026-11-21: FM-1s restarted on their own, back with CPU1 off) */
+assert.equal(resetCause(null), null);
+assert.equal(resetCause({why: null, p3: 0x01, rst: 0}).kind, 'on');
+assert.equal(resetCause({why: null, p3: 0x02, rst: 0}).kind, 'power', 'VDDIO low');
+assert.equal(resetCause({why: null, p3: 0x21, rst: 0}).kind, 'power', '1.2 V low with power-on');
+assert.equal(resetCause({why: null, p3: 0x40, rst: 0}).kind, 'restart');
+assert.equal(resetCause({why: null, p3: 0x00, rst: 0x20}).kind, 'planned');
+assert.equal(resetCause({why: null, p3: 0x10, rst: 0}).kind, 'button');
+assert.equal(resetCause({why: 'crash', p3: 0x40, rst: 0}).kind, 'crash');
+assert.equal(resetCause({why: 'watchdog', p3: 0x04, rst: 0}).kind, 'watchdog');
+assert.equal(resetCause({why: null, p3: 0, rst: 0}).kind, 'unknown');
+assert.match(resetCause({why: null, p3: 0x02, rst: 0x20}).text, /brown-out.*VDDIO low, core reset \(P3_RST_SRC 0x02, RST_SRC 0x20\)/);
+
+console.log('PASS link DJ: LIVE at every length (11 / 17 words, battery, 0.9.98 rows, song rows, SYNC, SEQ, volume), VOLUME_SET, SEQ_SET, SONG_ROWS, SYNC_SET (ok, playing, no), IDENTIFY, RESTART and its reset cause, older firmware');
