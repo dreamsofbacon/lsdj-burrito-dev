@@ -97,6 +97,15 @@ for (const [name, d, words, batt] of [
   await assert.rejects(link.restartInfo(), /Invalid restart/); }
 
 /* resetCause: the reset cause in words (stability, 2026-11-21: FM-1s restarted on their own, back with CPU1 off) */
+/* LAST_RESTART (0.9.98-dev.22): the kept record; none kept or older firmware: null */
+{ const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
+  const w = [0x52030507, 0x0200ABCD, 0x103, 637000, 0xFE | 0x04 << 8 | 116 << 16, 3323746907];
+  const {link, sent} = fake(() => [0, w.flatMap(le)]);
+  assert.equal(OP.LAST_RESTART, 0x3F);
+  assert.deepEqual(await link.lastRestart(), {kind: 'hang', count: 7, p33: 5, pc: 0x0200ABCD, rets: 0x103, uptimeMs: 637000, vec: 254, p3: 4, passes: 116, build: 3323746907});
+  assert.deepEqual(sent.map(s => s.op & 0x3f), [0x3F]); }
+{ const {link} = fake(() => [1, []]); assert.equal(await link.lastRestart(), null, 'none kept / older firmware'); }
+{ const {link} = fake(() => [0, [1, 2, 3]]); await assert.rejects(link.lastRestart(), /Invalid kept restart/); }
 assert.equal(resetCause(null), null);
 assert.equal(resetCause({why: null, p3: 0x01, rst: 0}).kind, 'on');
 assert.equal(resetCause({why: null, p3: 0x02, rst: 0}).kind, 'power', 'VDDIO low');

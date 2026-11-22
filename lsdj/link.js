@@ -14,7 +14,7 @@ export const OP = {INFO: 0x01, READ: 0x02, BEGIN: 0x03, CHUNK: 0x04, COMMIT: 0x0
   REVERB_SENDS_GET: 0x2D, REVERB_SENDS_SET: 0x2E, VOLUME_SET: 0x2F, SEQ_SET: 0x30, SONG_ROWS: 0x31, SYNC_SET: 0x32,
   DJ_DECK: 0x33, DJ_KEY: 0x34,
   PRESET_LIST: 0x35, PRESET_GET: 0x36, PRESET_PUT: 0x37, PRESET_LOAD: 0x38, PRESET_SAVE: 0x39,
-  READ_STREAM: 0x3A, STREAM_DATA: 0x3B, IDENTIFY: 0x3C, RESTART: 0x3D};
+  READ_STREAM: 0x3A, STREAM_DATA: 0x3B, IDENTIFY: 0x3C, RESTART: 0x3D, LAST_RESTART: 0x3F};
 export const STATUS = ['ok', 'bad request', 'wrong state', 'checksum mismatch', 'flash error'];
 export const CHUNK = 128;
 export const SAVE_SIZE = 131072;
@@ -375,6 +375,19 @@ export class Link {
   /* 0.9.98-dev.19: why this FM-1's last run ended -> {why: 'crash' | 'watchdog' | null (power on, an install, a
      planned restart), crash: {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} or null, p3, rst}; null before
      (status 1). Read only. (Colin's FM-1 restarted during DJ use and came back on CPU0, R0, with nothing saying why.) */
+  /* 0.9.98-dev.22: the last unplanned restart, kept in the FM-1's save store so it outlasts a power-off (RESTART's
+     record is in RAM and goes with it): {kind 'crash' | 'watchdog' | 'hang', count, p33, pc, rets, uptimeMs, vec, p3,
+     passes, build}, or null (none kept; older firmware). Read only. (Colin's FM-1 crashed on dev.21 on stage and was
+     switched off and on: nothing was left to say where.) */
+  async lastRestart() {
+    const r = await this.req(OP.LAST_RESTART, [], {timeout: 600, retries: 1, allow: [0, 1]});
+    if (r.status) return null;
+    if (r.data.length !== 24) throw new LinkError('Invalid kept restart from the FM-1.');
+    const w = Array.from({length: 6}, (_, i) => rd32(r.data, 4 * i));
+    if (w[0] >>> 24 !== 0x52) return null;
+    return {kind: [null, 'crash', 'watchdog', 'hang'][w[0] >> 16 & 255] ?? null, count: w[0] & 255, p33: w[0] >> 8 & 255,
+      pc: w[1], rets: w[2], uptimeMs: w[3], vec: w[4] & 255, p3: w[4] >> 8 & 255, passes: w[4] >>> 16, build: w[5]};
+  }
   async restartInfo() {
     const r = await this.req(OP.RESTART, [], {timeout: 600, retries: 1, allow: [0, 1]});
     if (r.status) return null;

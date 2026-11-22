@@ -273,6 +273,17 @@ async function checkRestarts() {
     restartChecked.add(d);
     let r = null;
     try { r = await l.restartInfo(); } catch { continue; }
+    /* (0.9.98-dev.22: the last unplanned restart kept in its save store, from before a power-off; said unless RESTART
+       has that very one in RAM) */
+    let lk = null;
+    try { lk = await l.lastRestart?.(); } catch { lk = null; }
+    if (lk?.kind && !(r?.crash && r.crash.pc === lk.pc && r.crash.uptimeMs === lk.uptimeMs)) {
+      const h = n => `0x${(n >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
+      const where = lk.kind === 'watchdog' ? 'the watchdog (CPU0 stopped answering; no record of where)'
+        : lk.kind === 'hang' ? `a hang: CPU0 stuck at ${h(lk.pc)} (${lk.rets ? `link op 0x${(lk.rets & 0x3F).toString(16).toUpperCase().padStart(2, '0')}` : 'no link op'}; P33 timeouts ${lk.p33}; main-loop passes ${lk.passes})`
+        : `a crash at ${h(lk.pc)} (vector ${lk.vec}, return ${h(lk.rets)})`;
+      logEvent(`FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware}): its last unplanned restart, kept from before: ${where}, after ${Math.round(lk.uptimeMs / 1000)} s running; reset cause 0x${lk.p3.toString(16).padStart(2, '0')}; build ${lk.build}.`);
+    }
     const cause = resetCause(r);
     if (!cause) continue;
     const who = `FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware})`;
@@ -290,7 +301,7 @@ async function checkRestarts() {
       if (k && !k.running && connected && !virtual && sameDev(d, current)) say('device', `${who}: CPU1 is off (R${k.reason}). Turn it off and on, or the sound may crackle.`, 'warn');
       continue;
     }
-    const what = r.why === 'hang' && c ? `a hang: CPU0 stuck at ${hex(c.pc)} for about 6 s (${c.rets ? `handling link op 0x${(c.rets & 0x3F).toString(16).toUpperCase().padStart(2, '0')}` : 'no link op'}; CPU1 heartbeat ${hex(c.sp)}; P33 timeouts since boot ${c.emu}; main-loop passes during it ${c.dbg} (0 or 1: stuck or starved; thousands: it ran without feeding); after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on)`
+    const what = r.why === 'hang' && c ? `a hang: CPU0 stuck at ${hex(c.pc)} for about 6 s (${c.rets ? `handling link op 0x${(c.rets & 0x3F).toString(16).toUpperCase().padStart(2, '0')}` : 'no link op'}; CPU1 heartbeat ${hex(c.sp)}; P33 timeouts since boot ${c.emu}; main-loop passes in its last 6 s ${c.dbg} (hundreds at most: stuck or starved; hundreds of thousands: it ran without feeding); after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on)`
       : r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)}); ${cause.text}`
       : cause.text;
     const text = `${who} restarted by itself: ${what}${cpuText}. If its CPU meter shows R0 or R1, LSDj runs on CPU0 now (the sound may crackle) until it's turned off and on.`;

@@ -11,7 +11,7 @@ async function protectedHash(app, offset, capacity) {
   return sha256hex(bytes);
 }
 
-const RELEASE = '0.9.98-dev.21';   /* the template this page was made with (template.json release) */
+const RELEASE = '0.9.98-dev.22';   /* the template this page was made with (template.json release) */
 
 export async function loadTemplate(fetcher = fetch) {
   const get = async (path, json = false) => {
