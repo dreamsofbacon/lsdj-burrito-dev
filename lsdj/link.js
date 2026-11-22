@@ -454,7 +454,10 @@ export function resetCause(r) {
   if (!r) return null;
   const p3 = r.p3 & 0x7F, causes = P3_BITS.filter((_, i) => (p3 >> i) & 1);
   if ((r.rst >> 5) & 1) causes.push('core reset');
-  const kind = r.why === 'crash' ? 'crash' : r.why === 'watchdog' ? 'watchdog' : r.why === 'hang' ? 'hang'
+  /* (P3_RST_SRC is set only by a chip-level reset, power-on or the watchdog, and kept through core resets: an install
+     or a swap after a watchdog restart still shows 0x04. RST_SRC bit 5 says the latest was a core reset: planned. The
+     firmware's own 'watchdog' (dev.19, dev.20) misses this; found on Colin's FM-1 right after an install, 2026-11-21) */
+  const kind = r.why === 'crash' ? 'crash' : r.why === 'hang' ? 'hang' : (r.rst >> 5) & 1 ? 'planned' : r.why === 'watchdog' ? 'watchdog'
     : p3 & (2 | 8 | 32) ? 'power' : p3 & 16 ? 'button' : p3 & 64 ? 'restart' : (r.rst >> 5) & 1 ? 'planned' : p3 & 1 ? 'on' : 'unknown';
   const said = {power: 'its supply dipped (a brown-out: the USB power or the battery sagged)', button: 'the power button was held',
     restart: 'the firmware restarted itself with no crash record (the emulator stopped with an error, or an update)',
