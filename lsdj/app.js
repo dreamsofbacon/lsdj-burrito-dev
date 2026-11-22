@@ -283,7 +283,8 @@ async function checkRestarts() {
        still say power-on after a crash, and the firmware then took it for a cold start) */
     const kept = c ? `; crash record: ${c.count} since power-on, the last at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running)` : '';
     if (['on', 'planned', 'button'].includes(cause.kind)) { logEvent(`${who} started: ${cause.text}${kept}.`); continue; }
-    const what = r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)}); ${cause.text}`
+    const what = r.why === 'hang' && c ? `a hang: CPU0 stuck at ${hex(c.pc)} for about 6 s (${c.rets ? `handling link op 0x${(c.rets & 0x3F).toString(16).toUpperCase().padStart(2, '0')}` : 'no link op'}; CPU1 heartbeat ${hex(c.sp)}; emu ${hex(c.emu)} dbg ${hex(c.dbg)}; after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on)`
+      : r.why === 'crash' && c ? `a crash at ${hex(c.pc)} (vector ${c.vec}, return ${hex(c.rets)}, after ${Math.round(c.uptimeMs / 1000)} s running; crash ${c.count} since power-on${c.early ? `, ${c.early} right after start` : ''}; emu ${hex(c.emu)} dbg ${hex(c.dbg)}); ${cause.text}`
       : cause.text;
     const text = `${who} restarted by itself: ${what}. If its CPU meter shows R0 or R1, LSDj runs on CPU0 now (the sound may crackle) until it's turned off and on.`;
     logEvent(text);

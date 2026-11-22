@@ -101,6 +101,9 @@ assert.equal(resetCause({why: null, p3: 0x10, rst: 0}).kind, 'button');
 assert.equal(resetCause({why: 'crash', p3: 0x40, rst: 0}).kind, 'crash');
 assert.equal(resetCause({why: 'watchdog', p3: 0x04, rst: 0}).kind, 'watchdog');
 assert.equal(resetCause({why: null, p3: 0, rst: 0}).kind, 'unknown');
+assert.equal(resetCause({why: 'hang', p3: 0x40, rst: 0}).kind, 'hang', '0.9.98-dev.20: the hang recorder');
+{ const {link} = fake(() => [0, [3, ...Array(44).fill(0)]]);
+  assert.equal((await link.restartInfo()).why, 'hang'); }
 assert.match(resetCause({why: null, p3: 0x02, rst: 0x20}).text, /brown-out.*VDDIO low, core reset \(P3_RST_SRC 0x02, RST_SRC 0x20\)/);
 
 console.log('PASS link DJ: LIVE at every length (11 / 17 words, battery, 0.9.98 rows, song rows, SYNC, SEQ, volume), VOLUME_SET, SEQ_SET, SONG_ROWS, SYNC_SET (ok, playing, no), IDENTIFY, RESTART and its reset cause, older firmware');

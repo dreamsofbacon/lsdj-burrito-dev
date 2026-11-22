@@ -381,7 +381,8 @@ export class Link {
     if (r.data.length !== 1 + 4 * 11) throw new LinkError('Invalid restart information from the FM-1.');
     const w = Array.from({length: 11}, (_, i) => rd32(r.data, 1 + 4 * i));
     const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst] = w;
-    return {why: [null, 'crash', 'watchdog'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst};
+    /* (0.9.98-dev.20: 3 a hang, the hang recorder's: CPU0 stuck about 6 s; the record's vector 254, rets the link op) */
+    return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst};
   }
   /* 0.9.98-dev.6, the presets (firmware/lsdj_presets.h, lsdj/presets.js); INFO's presets says the FM-1 has them.
      The list: {current (0..7, null none), names: [8, null = empty]} */
@@ -453,12 +454,12 @@ export function resetCause(r) {
   if (!r) return null;
   const p3 = r.p3 & 0x7F, causes = P3_BITS.filter((_, i) => (p3 >> i) & 1);
   if ((r.rst >> 5) & 1) causes.push('core reset');
-  const kind = r.why === 'crash' ? 'crash' : r.why === 'watchdog' ? 'watchdog'
+  const kind = r.why === 'crash' ? 'crash' : r.why === 'watchdog' ? 'watchdog' : r.why === 'hang' ? 'hang'
     : p3 & (2 | 8 | 32) ? 'power' : p3 & 16 ? 'button' : p3 & 64 ? 'restart' : (r.rst >> 5) & 1 ? 'planned' : p3 & 1 ? 'on' : 'unknown';
   const said = {power: 'its supply dipped (a brown-out: the USB power or the battery sagged)', button: 'the power button was held',
     restart: 'the firmware restarted itself with no crash record (the emulator stopped with an error, or an update)',
     planned: 'a planned restart (an install or an LSDj swap)', on: 'it was switched on', unknown: 'nothing it can name',
-    crash: 'a crash', watchdog: 'the watchdog (CPU0 stopped answering)'}[kind];
+    crash: 'a crash', watchdog: 'the watchdog (CPU0 stopped answering)', hang: 'a hang (CPU0 stuck about 6 s; the hang recorder restarted it)'}[kind];
   return {kind, causes, text: `${said}; reset cause ${causes.join(', ') || 'none'} (P3_RST_SRC 0x${p3.toString(16).padStart(2, '0')}, RST_SRC 0x${(r.rst >>> 0).toString(16)})`};
 }
 
