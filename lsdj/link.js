@@ -378,11 +378,13 @@ export class Link {
   async restartInfo() {
     const r = await this.req(OP.RESTART, [], {timeout: 600, retries: 1, allow: [0, 1]});
     if (r.status) return null;
-    if (r.data.length !== 1 + 4 * 11) throw new LinkError('Invalid restart information from the FM-1.');
-    const w = Array.from({length: 11}, (_, i) => rd32(r.data, 1 + 4 * i));
-    const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst] = w;
+    /* (0.9.98-dev.21: a 12th word, CPU1 now -> cpu1 {running, reason (the CPU meter's R), tries, guard}; null before) */
+    if (r.data.length !== 1 + 4 * 11 && r.data.length !== 1 + 4 * 12) throw new LinkError('Invalid restart information from the FM-1.');
+    const w = Array.from({length: (r.data.length - 1) / 4}, (_, i) => rd32(r.data, 1 + 4 * i));
+    const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst, c1] = w;
+    const cpu1 = c1 == null ? null : {running: !!(c1 & 1), reason: c1 >> 8 & 255, tries: c1 >> 16 & 255, guard: !!(c1 >> 24 & 1), p33: c1 >>> 25};   /* (p33: P33 timeouts since boot, at most 127) */
     /* (0.9.98-dev.20: 3 a hang, the hang recorder's: CPU0 stuck about 6 s; the record's vector 254, rets the link op) */
-    return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst};
+    return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst, cpu1};
   }
   /* 0.9.98-dev.6, the presets (firmware/lsdj_presets.h, lsdj/presets.js); INFO's presets says the FM-1 has them.
      The list: {current (0..7, null none), names: [8, null = empty]} */

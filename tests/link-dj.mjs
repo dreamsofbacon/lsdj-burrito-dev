@@ -79,10 +79,16 @@ for (const [name, d, words, batt] of [
   const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
   const {link, sent} = fake(() => [0, [1, ...w.flatMap(le)]]);
   assert.equal(OP.RESTART, 0x3D);
-  assert.deepEqual(await link.restartInfo(), {why: 'crash', crash: {count: 2, vec: 3, pc: 0x0200ABCD, rets: 0x02001234, emu: 5, dbg: 6, sp: 0x01C10000, uptimeMs: 812345, early: 0}, p3: 0x44, rst: 0x20});
+  assert.deepEqual(await link.restartInfo(), {why: 'crash', crash: {count: 2, vec: 3, pc: 0x0200ABCD, rets: 0x02001234, emu: 5, dbg: 6, sp: 0x01C10000, uptimeMs: 812345, early: 0}, p3: 0x44, rst: 0x20, cpu1: null});
   assert.deepEqual(sent.map(s => [s.op & 0x3f, s.body.length <= 1]), [[0x3D, true]], 'no arguments (a tag at most)'); }
 { const {link} = fake(() => [0, [2, ...Array(44).fill(0)]]);
-  assert.deepEqual(await link.restartInfo(), {why: 'watchdog', crash: null, p3: 0, rst: 0}); }
+  assert.deepEqual(await link.restartInfo(), {why: 'watchdog', crash: null, p3: 0, rst: 0, cpu1: null}); }
+{ const {link} = fake(() => [0, [0, ...Array(44).fill(0), 0x01, 0x01, 0x01, 0x00]]);   /* dev.21: CPU1 runs, R1 left from before?, try 1 */
+  assert.deepEqual((await link.restartInfo()).cpu1, {running: true, reason: 1, tries: 1, guard: false, p33: 0}); }
+{ const {link} = fake(() => [0, [0, ...Array(44).fill(0), 0x00, 0x00, 0x00, 0x01]]);
+  assert.deepEqual((await link.restartInfo()).cpu1, {running: false, reason: 0, tries: 0, guard: true, p33: 0}, 'R0: the crash guard');
+{ const {link} = fake(() => [0, [0, ...Array(44).fill(0), 0x01, 0x00, 0x01, 0x07 << 1]]);
+  assert.equal((await link.restartInfo()).cpu1.p33, 7, 'P33 timeouts since boot'); } }
 { const {link} = fake(() => [0, [0, ...Array(44).fill(0)]]);
   assert.equal((await link.restartInfo()).why, null); }
 { const {link} = fake(() => [1, []]);
