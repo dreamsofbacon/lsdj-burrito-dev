@@ -32,7 +32,7 @@ async function chooseRom(bytes, name) {
   $('rom').files = t.files;
   await $('rom').onchange({target: $('rom')});
 }
-const loadButton = name => [...document.querySelectorAll('.sets-lib li')].find(li => li.textContent.startsWith(name))
+const loadButton = name => [...document.querySelectorAll('#songtools .sets-lib li')].find(li => li.textContent.startsWith(name))
   ?.querySelector('button');
 
 export async function runKitLoadUiTests() {

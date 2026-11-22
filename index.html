@@ -313,6 +313,9 @@ body.popped .dj-fx{padding:14px 18px;overflow:auto;scrollbar-width:thin}
 /* the crate (lsdj/crate-ui.js): a strip of cards under the console; a deck takes a dropped card, and shows a cover while it loads */
 .dj-crate{margin:8px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--card2)}
 .crate-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.studio-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.studio-tabs a{padding:6px 14px;border-radius:999px;border:1px solid var(--line);text-decoration:none;color:var(--ink)}
+.studio-tabs a.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 /* the cartridge studio (lsdj/studio-ui.js): drop zone, the LSDj shelf, loose songs on the left, cartridges on the right */
 #studio.drop{outline:3px dashed var(--accent);outline-offset:4px}
 #studio.busy .studio-grid{opacity:.6;pointer-events:none}
@@ -1252,7 +1255,7 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 <header class="top"><div class="top-in">
 <a class="brand" href="#home">LSDJ Burrito<small>by Dreamy_bacon</small></a>
 <nav class="page-nav" aria-label="Main">
-<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#studio" data-view="studio">Studio</a><a href="#carts" data-view="carts">Cartridges</a><a href="#songtools" data-view="songs">Songs &amp; kits</a><a href="#emulator-sec" data-view="try">Try it</a>
+<a href="#home" data-view="home">Home</a><a href="#connect" data-view="device">My FM-1</a><a href="#install" data-view="install">Install</a><a href="#studio" data-view="studio">Studio</a><a href="#emulator-sec" data-view="try">Try it</a>
 </nav>
 <button id="install-app" class="chip install-chip" type="button" title="Install LSDJ Burrito as an app: it opens in its own window and works offline" hidden>Install app</button>
 <a id="conn-chip" class="chip" href="#connect">Not connected</a>
@@ -1604,27 +1607,20 @@ button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-wi
 </section>
 </div>
 
-<!-- ============ SONGS & KITS ============ -->
-<div class="view" data-view="songs" hidden>
-<section id="songtools-sec">
-<h2>Songs &amp; kits</h2>
-<div id="songtools"></div>
-</section>
-</div>
-
-<!-- ============ STUDIO ============ -->
+<!-- ============ STUDIO (Build, Cartridges, Songs & kits: one page, three sections) ============ -->
 <div class="view" data-view="studio" hidden>
-<section id="studio-sec">
+<nav class="studio-tabs" aria-label="Studio sections"><a href="#studio" data-sec="studio-sec">Build</a><a href="#carts" data-sec="carts-sec">Cartridges</a><a href="#songtools" data-sec="songtools-sec">Songs &amp; kits</a></nav>
+<section id="studio-sec" class="studio-section">
 <h2>Cartridge studio</h2>
 <div id="studio"></div>
 </section>
-</div>
-
-<!-- ============ CARTRIDGES ============ -->
-<div class="view" data-view="carts" hidden>
-<section id="carts-sec">
+<section id="carts-sec" class="studio-section" hidden>
 <h2>Cartridges</h2>
 <div id="carts"></div>
+</section>
+<section id="songtools-sec" class="studio-section" hidden>
+<h2>Songs &amp; kits</h2>
+<div id="songtools"></div>
 </section>
 </div>
 

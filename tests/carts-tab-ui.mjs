@@ -49,7 +49,7 @@ export async function runCartsTabUiTests() {
     files($('carts').querySelector('input[type=file]'), [[synthetic([40, 41]), 'base.gb'], [new Uint8Array(500), 'notes.gb']]);
     const card = await until(() => cardOf('base.gb'), 'base.gb listed');
     assert(/2 kits/.test(card.textContent), `its kits: ${card.textContent}`);
-    assert(/Not added: notes\.gb/.test($('carts-status').textContent), `a bad file said: ${$('carts-status').textContent}`);
+    await until(() => /Not added: notes\.gb/.test($('carts-status').textContent), 'a bad file said');   /* (said after the card is drawn) */
     const base = (await cartridges()).find(c => c.name === 'base.gb');
 
     /* Install… : opened in Install, every kit ticked */

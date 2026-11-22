@@ -6,7 +6,9 @@ import {getFirmwareSelection} from './install-ui.js';
 const $ = id => document.getElementById(id);
 const TABS = ['live-sec', 'songs-sec', 'theme-sec', 'settings-sec'];
 const VIEW_OF = {home: 'home', connect: 'device', install: 'install', 'rom-step': 'install', 'install-sec': 'install', 'emulator-sec': 'try',
-  songtools: 'songs', 'songtools-sec': 'songs', carts: 'carts', 'carts-sec': 'carts', studio: 'studio', 'studio-sec': 'studio'};
+  songtools: 'studio', 'songtools-sec': 'studio', carts: 'studio', 'carts-sec': 'studio', studio: 'studio', 'studio-sec': 'studio'};
+/* the Studio's sections: which one an address shows (Build is the page's own address) */
+const STUDIO_SEC = {studio: 'studio-sec', 'studio-sec': 'studio-sec', carts: 'carts-sec', 'carts-sec': 'carts-sec', songtools: 'songtools-sec', 'songtools-sec': 'songtools-sec'};
 TABS.forEach(t => { VIEW_OF[t] = 'device'; });
 
 let connected = false, tab = 'live-sec', step = 1, rom = {ready: false, fits: false, prepared: false};
@@ -18,6 +20,11 @@ function route() {
   if (TABS.includes(id)) tab = id;
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.dataset.view !== view; });
   document.querySelectorAll('.page-nav a').forEach(a => a.classList.toggle('on', a.dataset.view === view));
+  if (view === 'studio') {
+    const sec = STUDIO_SEC[id] || 'studio-sec';
+    document.querySelectorAll('.studio-section').forEach(s => { s.hidden = s.id !== sec; });
+    document.querySelectorAll('.studio-tabs a').forEach(a => a.classList.toggle('on', a.dataset.sec === sec));
+  }
   TABS.forEach(t => { $(t).hidden = t !== tab; });
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   /* Perform: the live controls as one 16:9 screen, the site's header folded away */
