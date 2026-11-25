@@ -270,10 +270,24 @@ const restartChecked = new WeakSet();
 function hangLoad(o) {
   if (!o) return '';
   const parts = [`interrupts took ${o.share}% of CPU0 in its last second`
-    + ` (longest scan ${o.scanUs} µs${o.audUs != null ? `, sound ${o.audUs} µs` : ''}${o.irqs != null ? `, ${o.irqs} of them` : ''})`,
+    + ` (longest scan ${o.scanUs === 0 && o.audUs == null ? 'under 20' : o.scanUs} µs${   /* (the kept copy: in 20 µs steps) */o.audUs != null ? `, sound ${o.audUs} µs` : ''}${o.irqs != null ? `, ${o.irqs} of them` : ''})`,
     `MIDI queue ${o.ring}${o.rxPend ? ', USB waiting for room' : ''}${o.overflow ? ', overflowed' : ''}${o.sx ? `; SysEx out queue ${o.sx}` : ''}`,
     o.moves ? `CPU0 moved ${o.moves}${o.moves >= 63 && o.irqs == null ? '+' : ''} times while stuck` : 'CPU0 never moved while stuck'];
+  /* (0.9.98-dev.24: its last seconds of the speed test, oldest first) */
+  if (o.history?.length) parts.push(`its last ${o.history.length} s, oldest first: ${o.history.map(speedSecond).join(' | ')}`);
   return '; ' + parts.join('; ');
+}
+/* one second of the speed test (link.js speedFrom), short */
+const speedSecond = s => `interrupts ${s.share}%, sound ${s.audUs} µs, RAM loop ${s.spinUs} µs, screen reads ${s.sramUs} µs, flash reads ${s.flashUs} µs`;
+/* 0.9.98-dev.24: a healthy FM-1's speed test in the Log, the first time this page sees one and then every 10 minutes,
+   so a hang's last seconds have something to be compared with */
+const speedSaid = new Map(), SPEED_EVERY_MS = 10 * 60 * 1000;
+function noteSpeed(d, l) {
+  if (!d || !l?.speed) return;
+  const k = portKey(d), at = speedSaid.get(k);
+  if (at != null && Date.now() - at < SPEED_EVERY_MS) return;
+  speedSaid.set(k, Date.now());
+  logEvent(`FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware}) speed test, for comparing with a hang: ${speedSecond(l.speed)}.`);
 }
 async function checkRestarts() {
   for (const d of devices) {
@@ -435,7 +449,7 @@ function watch(d) {
     if (watchers.get(d) !== w) return;
     if (follow && !busy && !installing() && !connecting && anyVisible()) {
       try {
-        const key = liveKey(await w.link.live()); w.missed = 0;
+        const lv = await w.link.live(), key = liveKey(lv); w.missed = 0; noteSpeed(d, lv);
         /* played, unless by a controller on this page (that is not someone at the FM-1) */
         if (w.base !== null && key !== w.base && Date.now() - (padAt.get(portKey(d)) || 0) > QUIET_MS) { w.at = Date.now(); maybeFollow(d); }
         w.base = key;
@@ -1175,6 +1189,7 @@ async function tick() {
     if (!dj && ++ticks % 8 === 0) await followThemeSetting();
     if (!dj && hasPresets && ticks % 8 === 4 && await readPresetList(link)) await reloadConfig();
     const l = (dj && djLive(curKey())) || await link.live();   /* a deck already polls this FM-1: its answer, not another LIVE on the link */
+    if (!virtual) noteSpeed(current, l);
     { const key = liveKey(l); if (lastKey !== null && key !== lastKey) activeAt = Date.now(); lastKey = key; }   /* played: Follow stays */
     const live = unpackFx(l.fx);
     live.reverb = fx.reverb && ticks % 2 === 0 && !dj ? await readReverb()
@@ -1400,6 +1415,7 @@ setDjHooks({
   devices: () => devices.map(d => ({key: portKey(d), label: `FM-1 ${fm1No(d)}: ${d.info.title || 'no LSDj'}`, fw: d.info.firmware, title: d.info.title, crc: d.info.saveCrc,
     presets: !!d.info.presets, fx98: !!d.info.fx98})),
   linkFor: djLinkFor,
+  liveSeen: (key, l) => noteSpeed(devices.find(d => portKey(d) === key), l),   /* (dev.24: a deck's FM-1's speed test) */
   outputFor: key => devices.find(x => portKey(x) === key)?.output || null,
   access: () => ports?.access || null,
   takeClock: () => { if (syncMode !== 'off') { setSync('off'); drawSync('The DJ layout clocks the FM-1s now: Clock here is off.'); } },

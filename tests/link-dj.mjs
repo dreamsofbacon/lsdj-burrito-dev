@@ -130,7 +130,18 @@ assert.equal(resetCause({why: 'hang', p3: 0x40, rst: 0}).kind, 'hang', '0.9.98-d
 { const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
   const w = [1, 254, 0x0200EFFA, 0, 0, 0, 0x469D8402, 848000, 0, 0x40, 0, 0, 995, 2400 | 4800 << 16, 60 | 1 << 8 | 1 << 10 | 3 << 16, 0, 10500];
   const {link} = fake(() => [0, [3, ...w.flatMap(le)]]);
-  assert.deepEqual((await link.restartInfo()).crash.load, {share: 99.5, scanUs: 100, audUs: 200, ring: 60, rxPend: true, overflow: false, usb: true, sx: 3, moves: 0, irqs: 10500});
+  assert.deepEqual((await link.restartInfo()).crash.load, {share: 99.5, scanUs: 100, audUs: 200, ring: 60, rxPend: true, overflow: false, usb: true, sx: 3, moves: 0, irqs: 10500, history: null});
+  /* (0.9.98-dev.24: 25 words, the hang's last 8 seconds of speed test; seconds not yet timed (bit 31 clear) left out) */
+  const sp = (50 | 46 << 7 | 31 << 13 | 21 << 19 | 41 << 25 | 1 << 31) >>> 0;
+  const want = {share: 50, audUs: 2560, spinUs: 8, sramUs: 1.3, flashUs: 42.7};
+  const f3 = fake(() => [0, [3, ...[...w, 0, 0, 0, sp, sp, sp, sp, sp].flatMap(le)]]);
+  assert.deepEqual((await f3.link.restartInfo()).crash.load.history, Array(5).fill(want));
+  { const f4 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), ...le(sp)]]);
+    assert.deepEqual((await f4.link.live()).speed, want, 'LIVE (dev.24): the newest second of the speed test');
+    const f5 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), 0, 0, 0, 0]]);
+    assert.equal((await f5.link.live()).speed, null, 'none yet');
+    const f6 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF)]]);
+    assert.equal((await f6.link.live()).speed, null, 'older firmware'); }
   w[1] = 3; const f2 = fake(() => [0, [1, ...w.flatMap(le)]]);
   assert.equal((await f2.link.restartInfo()).crash.load, null, 'a crash: psr and the ETM trace are its own'); }
 assert.match(resetCause({why: null, p3: 0x02, rst: 0x1}).text, /brown-out.*VDDIO low \(P3_RST_SRC 0x02, RST_SRC 0x1\)/);

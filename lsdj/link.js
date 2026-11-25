@@ -401,11 +401,13 @@ export class Link {
     if (r.status) return null;
     /* (0.9.98-dev.21: a 12th word, CPU1 now -> cpu1 {running, reason (the CPU meter's R), tries, guard}; null before) */
     /* (0.9.98-dev.23: words 13-17, the record's psr and ETM trace; a hang's load figures in them) */
-    if (![11, 12, 17].some(n => r.data.length === 1 + 4 * n)) throw new LinkError('Invalid restart information from the FM-1.');
+    /* (0.9.98-dev.24: words 18-25, a hang's last 8 seconds of load and speed test, oldest first -> load.history) */
+    if (![11, 12, 17, 25].some(n => r.data.length === 1 + 4 * n)) throw new LinkError('Invalid restart information from the FM-1.');
     const w = Array.from({length: (r.data.length - 1) / 4}, (_, i) => rd32(r.data, 1 + 4 * i));
     const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst, c1, psr, e0, e1, e2, e3] = w;
     const load = vec === 254 && psr != null ? {share: psr / 10, scanUs: Math.round((e0 & 0xFFFF) / 24), audUs: Math.round((e0 >>> 16) / 24),
-      ring: e1 & 255, rxPend: !!(e1 >> 8 & 1), overflow: !!(e1 >> 9 & 1), usb: !!(e1 >> 10 & 1), sx: e1 >>> 16 & 255, moves: e2, irqs: e3} : null;
+      ring: e1 & 255, rxPend: !!(e1 >> 8 & 1), overflow: !!(e1 >> 9 & 1), usb: !!(e1 >> 10 & 1), sx: e1 >>> 16 & 255, moves: e2, irqs: e3,
+      history: w.length >= 25 ? w.slice(17, 25).map(speedFrom).filter(Boolean) : null} : null;
     const cpu1 = c1 == null ? null : {running: !!(c1 & 1), reason: c1 >> 8 & 255, tries: c1 >> 16 & 255, guard: !!(c1 >> 24 & 1), p33: c1 >>> 25};   /* (p33: P33 timeouts since boot, at most 127) */
     /* (0.9.98-dev.20: 3 a hang, the hang recorder's: CPU0 stuck about 6 s; the record's vector 254, rets the link op) */
     return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, load} : null, p3, rst, cpu1};
@@ -446,11 +448,23 @@ export class Link {
    phrase of its chain it plays, 0..15, and the chain's phrases, 1..16; null before)}; unknown: null */
 const SYNCS = {0: 'off', 1: 'lsdj', 3: 'midi', 5: 'keybd'};
 export function liveDj(e) {
-  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null};
+  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null, speed: null};
   const k = b => b === 0xFF ? null : b;
   return {rows: [...e.slice(0, 4)].map(k), songRows: [...e.slice(4, 8)].map(k), sync: SYNCS[e[8]] ?? null,
           live: e[9] === 0xFF ? null : !!e[9], level: k(e[10]),
-          chainPos: e.length >= 19 ? [...e.slice(11, 15)].map(k) : null, chainLen: e.length >= 19 ? [...e.slice(15, 19)].map(k) : null};
+          chainPos: e.length >= 19 ? [...e.slice(11, 15)].map(k) : null, chainLen: e.length >= 19 ? [...e.slice(15, 19)].map(k) : null,
+          speed: e.length >= 23 ? speedFrom(rd32(e, 19)) : null};
+}
+
+/* 0.9.98-dev.24, one second of the FM-1's speed test (firmware board.c hw_speed_second; LIVE's last word, RESTART's
+   words 18-25 for a hang) -> {share (the interrupts' % of CPU0), audUs (the longest sound interrupt), spinUs (a loop
+   run from RAM), sramUs (64 screen-buffer reads), flashUs (32 flash reads)}, or null (none yet). Each was kept as a
+   quarter-octave code: within about 12 %. */
+export function speedFrom(w) {
+  if (!(w >>> 31)) return null;
+  const v = c => c ? (4 + ((c - 1) & 3)) * 2 ** ((c - 1) >> 2) / 4 : 0;
+  const us = t => Math.round(t / 2.4) / 10;   /* 24 MHz ticks -> us, 0.1 */
+  return {share: w & 127, audUs: v(w >>> 7 & 63), spinUs: us(v(w >>> 13 & 63)), sramUs: us(v(w >>> 19 & 63)), flashUs: us(v(w >>> 25 & 63))};
 }
 
 /* LIVE's battery byte: 0..3 bars of 3, +0x80 on USB power; 0xFF (or none: before FM-1_979) unknown */

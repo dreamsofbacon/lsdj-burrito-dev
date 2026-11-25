@@ -911,7 +911,7 @@ async function pollDeck(d) {
   if (!l) return;
   try {
     const asked = now();
-    d.live = await l.live(); d.live.askedAt = asked; d.live.gotAt = now();   /* (when it was asked: killSettle trusts only a fresh one;
+    d.live = await l.live(); d.live.askedAt = asked; d.live.gotAt = now(); hooks.liveSeen?.(d.key, d.live);   /* (when it was asked: killSettle trusts only a fresh one;
                                                                               Next chain takes it as read half-way) */
     songTempo(d);
     fm1Stopped(d); ownAnchor(d); adoptLiveFx(d); killSettle(d);
@@ -1227,11 +1227,6 @@ function drawDeck(d) {
       ariaLabel: `Deck ${NAMES[d.i]} tempo fader range`}),
     el('div', {className: 'dj-pitch-wrap'}, el('span', {className: 'dj-small', textContent: '−'}), pitch, el('span', {className: 'dj-small', textContent: '+'})),
     el('label', {className: 'dj-small dj-bpm-label'}, bpmIn),
-    /* Play's start, this deck's own (dj.js START_ON) */
-    el('label', {className: 'dj-small dj-starton', title: 'When this deck\'s PLAY starts it. A bar is one LSDj phrase (16 rows): "Next bar" starts on the playing deck\'s next row 00; 2 to 16 bars count from where that deck started. PLAY counts down meanwhile; press it again to cancel.'},
-      'Play starts ', sel(START_ON.map(([k, t]) => [k, t]), d.startOn, v => { d.startOn = v; store.set(`dj-start-on-${d.i}`, v); }, `Deck ${NAMES[d.i]} Play starts`)),
-    el('label', {className: 'dj-small dj-starton', title: 'Counted on the other deck while it plays (its LSDj\'s phrases), or always on the master clock'},
-      'counted on ', sel([['deck', 'the playing deck'], ['master', 'the master']], d.startFrom, v => { d.startFrom = v; store.set(`dj-start-from-${d.i}`, v); }, `Deck ${NAMES[d.i]} count the start on`)),
     el('div', {className: 'dj-steps'},
       stepBtn('−', -1, (dir, size) => stepDeck(d, dir, size), {className: 'dj-pad dj-tbtn', ariaLabel: `Deck ${NAMES[d.i]} tempo down`, title: 'Tempo down (hold: faster); lets go of Sync'}),
       stepBtn('+', 1, (dir, size) => stepDeck(d, dir, size), {className: 'dj-pad dj-tbtn', ariaLabel: `Deck ${NAMES[d.i]} tempo up`, title: 'Tempo up (hold: faster); lets go of Sync'})));
@@ -1248,6 +1243,11 @@ function drawDeck(d) {
   const by = (k) => sel([['fm1', 'FM-1', !fm1], ['mixer', 'mixer', !preset(mixer.id).out]], d[k], v => { d[k] = v; }, 'Whose effect');
   const util = el('div', {className: 'dj-util dj-small'},
     el('label', {}, 'Throws by ', by('throwBy')), el('label', {}, 'Filter by ', by('filterBy')),
+    /* Play's start, this deck's own (dj.js START_ON) */
+    el('label', {className: 'dj-small dj-starton', title: 'When this deck\'s PLAY starts it. A bar is one LSDj phrase (16 rows): "Next bar" starts on the playing deck\'s next row 00; 2 to 16 bars count from where that deck started. PLAY counts down meanwhile; press it again to cancel.'},
+      'Play starts ', sel(START_ON.map(([k, t]) => [k, t]), d.startOn, v => { d.startOn = v; store.set(`dj-start-on-${d.i}`, v); }, `Deck ${NAMES[d.i]} Play starts`)),
+    el('label', {className: 'dj-small dj-starton', title: 'Counted on the other deck while it plays (its LSDj\'s phrases), or always on the master clock'},
+      'counted on ', sel([['deck', 'the playing deck'], ['master', 'the master']], d.startFrom, v => { d.startFrom = v; store.set(`dj-start-from-${d.i}`, v); }, `Deck ${NAMES[d.i]} count the start on`)),
     fm1 && !has98 ? el('span', {textContent: 'Hold and Rows need 0.9.98.'}) : null);
   if (fm1) { u.info = el('span', {className: 'dj-info'}); util.append(u.info); }
 
