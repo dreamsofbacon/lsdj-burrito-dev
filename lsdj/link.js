@@ -384,20 +384,31 @@ export class Link {
     if (r.status) return null;
     if (r.data.length !== 24) throw new LinkError('Invalid kept restart from the FM-1.');
     const w = Array.from({length: 6}, (_, i) => rd32(r.data, 4 * i));
-    if (w[0] >>> 24 !== 0x52) return null;
-    return {kind: [null, 'crash', 'watchdog', 'hang'][w[0] >> 16 & 255] ?? null, count: w[0] & 255, p33: w[0] >> 8 & 255,
-      pc: w[1], rets: w[2], uptimeMs: w[3], vec: w[4] & 255, p3: w[4] >> 8 & 255, passes: w[4] >>> 16, build: w[5]};
+    const v = w[0] >>> 24;
+    if (v !== 0x52 && v !== 0x53) return null;
+    const o = {kind: [null, 'crash', 'watchdog', 'hang'][w[0] >> 16 & 255] ?? null, count: w[0] & 255, p33: w[0] >> 8 & 255,
+      pc: w[1], rets: w[2], uptimeMs: w[3], vec: w[4] & 255, p3: w[4] >> 8 & 255, passes: w[4] >>> 16, build: w[5], load: null};
+    /* (0.9.98-dev.23, a hang: 0x53, its load packed in words 2 and 3; the uptime in whole seconds) */
+    if (v === 0x53) {
+      o.rets = w[2] & 0xFFF; o.uptimeMs = (w[3] & 0x3FFFF) * 1000;
+      o.load = {share: (w[2] >>> 12 & 1023) / 10, ring: w[2] >>> 22 & 127, rxPend: !!(w[2] >>> 29 & 1), overflow: !!(w[2] >>> 30 & 1),
+        moves: w[3] >>> 18 & 63, scanUs: (w[3] >>> 24) * 20, audUs: null, irqs: null, sx: null};
+    }
+    return o;
   }
   async restartInfo() {
     const r = await this.req(OP.RESTART, [], {timeout: 600, retries: 1, allow: [0, 1]});
     if (r.status) return null;
     /* (0.9.98-dev.21: a 12th word, CPU1 now -> cpu1 {running, reason (the CPU meter's R), tries, guard}; null before) */
-    if (r.data.length !== 1 + 4 * 11 && r.data.length !== 1 + 4 * 12) throw new LinkError('Invalid restart information from the FM-1.');
+    /* (0.9.98-dev.23: words 13-17, the record's psr and ETM trace; a hang's load figures in them) */
+    if (![11, 12, 17].some(n => r.data.length === 1 + 4 * n)) throw new LinkError('Invalid restart information from the FM-1.');
     const w = Array.from({length: (r.data.length - 1) / 4}, (_, i) => rd32(r.data, 1 + 4 * i));
-    const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst, c1] = w;
+    const [count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, p3, rst, c1, psr, e0, e1, e2, e3] = w;
+    const load = vec === 254 && psr != null ? {share: psr / 10, scanUs: Math.round((e0 & 0xFFFF) / 24), audUs: Math.round((e0 >>> 16) / 24),
+      ring: e1 & 255, rxPend: !!(e1 >> 8 & 1), overflow: !!(e1 >> 9 & 1), usb: !!(e1 >> 10 & 1), sx: e1 >>> 16 & 255, moves: e2, irqs: e3} : null;
     const cpu1 = c1 == null ? null : {running: !!(c1 & 1), reason: c1 >> 8 & 255, tries: c1 >> 16 & 255, guard: !!(c1 >> 24 & 1), p33: c1 >>> 25};   /* (p33: P33 timeouts since boot, at most 127) */
     /* (0.9.98-dev.20: 3 a hang, the hang recorder's: CPU0 stuck about 6 s; the record's vector 254, rets the link op) */
-    return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early} : null, p3, rst, cpu1};
+    return {why: [null, 'crash', 'watchdog', 'hang'][r.data[0]] ?? null, crash: count ? {count, vec, pc, rets, emu, dbg, sp, uptimeMs, early, load} : null, p3, rst, cpu1};
   }
   /* 0.9.98-dev.6, the presets (firmware/lsdj_presets.h, lsdj/presets.js); INFO's presets says the FM-1 has them.
      The list: {current (0..7, null none), names: [8, null = empty]} */

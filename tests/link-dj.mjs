@@ -79,7 +79,7 @@ for (const [name, d, words, batt] of [
   const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
   const {link, sent} = fake(() => [0, [1, ...w.flatMap(le)]]);
   assert.equal(OP.RESTART, 0x3D);
-  assert.deepEqual(await link.restartInfo(), {why: 'crash', crash: {count: 2, vec: 3, pc: 0x0200ABCD, rets: 0x02001234, emu: 5, dbg: 6, sp: 0x01C10000, uptimeMs: 812345, early: 0}, p3: 0x44, rst: 0x20, cpu1: null});
+  assert.deepEqual(await link.restartInfo(), {why: 'crash', crash: {count: 2, vec: 3, pc: 0x0200ABCD, rets: 0x02001234, emu: 5, dbg: 6, sp: 0x01C10000, uptimeMs: 812345, early: 0, load: null}, p3: 0x44, rst: 0x20, cpu1: null});
   assert.deepEqual(sent.map(s => [s.op & 0x3f, s.body.length <= 1]), [[0x3D, true]], 'no arguments (a tag at most)'); }
 { const {link} = fake(() => [0, [2, ...Array(44).fill(0)]]);
   assert.deepEqual(await link.restartInfo(), {why: 'watchdog', crash: null, p3: 0, rst: 0, cpu1: null}); }
@@ -102,8 +102,14 @@ for (const [name, d, words, batt] of [
   const w = [0x52030507, 0x0200ABCD, 0x103, 637000, 0xFE | 0x04 << 8 | 116 << 16, 3323746907];
   const {link, sent} = fake(() => [0, w.flatMap(le)]);
   assert.equal(OP.LAST_RESTART, 0x3F);
-  assert.deepEqual(await link.lastRestart(), {kind: 'hang', count: 7, p33: 5, pc: 0x0200ABCD, rets: 0x103, uptimeMs: 637000, vec: 254, p3: 4, passes: 116, build: 3323746907});
+  assert.deepEqual(await link.lastRestart(), {kind: 'hang', count: 7, p33: 5, pc: 0x0200ABCD, rets: 0x103, uptimeMs: 637000, vec: 254, p3: 4, passes: 116, build: 3323746907, load: null});
   assert.deepEqual(sent.map(s => s.op & 0x3f), [0x3F]); }
+/* (0.9.98-dev.23, a hang: 0x53, its load in words 2 and 3, the uptime in seconds) */
+{ const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
+  const w = [0x53030001, 0x0200EFFA, (0x100 | 0x34) | 998 << 12 | 40 << 22 | 1 << 29, 848 | 0 << 18 | 9 << 24, 0xFE | 0x40 << 8, 932226441];
+  const {link} = fake(() => [0, w.flatMap(le)]);
+  assert.deepEqual(await link.lastRestart(), {kind: 'hang', count: 1, p33: 0, pc: 0x0200EFFA, rets: 0x134, uptimeMs: 848000, vec: 254, p3: 0x40, passes: 0, build: 932226441,
+    load: {share: 99.8, ring: 40, rxPend: true, overflow: false, moves: 0, scanUs: 180, audUs: null, irqs: null, sx: null}}); }
 { const {link} = fake(() => [1, []]); assert.equal(await link.lastRestart(), null, 'none kept / older firmware'); }
 { const {link} = fake(() => [0, [1, 2, 3]]); await assert.rejects(link.lastRestart(), /Invalid kept restart/); }
 assert.equal(resetCause(null), null);
@@ -120,6 +126,13 @@ assert.equal(resetCause({why: null, p3: 0, rst: 0}).kind, 'unknown');
 assert.equal(resetCause({why: 'hang', p3: 0x40, rst: 0}).kind, 'hang', '0.9.98-dev.20: the hang recorder');
 { const {link} = fake(() => [0, [3, ...Array(44).fill(0)]]);
   assert.equal((await link.restartInfo()).why, 'hang'); }
+/* (0.9.98-dev.23: 17 words; a hang's (vector 254) load figures from psr and the ETM words; a crash's: none) */
+{ const le = v => [v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24];
+  const w = [1, 254, 0x0200EFFA, 0, 0, 0, 0x469D8402, 848000, 0, 0x40, 0, 0, 995, 2400 | 4800 << 16, 60 | 1 << 8 | 1 << 10 | 3 << 16, 0, 10500];
+  const {link} = fake(() => [0, [3, ...w.flatMap(le)]]);
+  assert.deepEqual((await link.restartInfo()).crash.load, {share: 99.5, scanUs: 100, audUs: 200, ring: 60, rxPend: true, overflow: false, usb: true, sx: 3, moves: 0, irqs: 10500});
+  w[1] = 3; const f2 = fake(() => [0, [1, ...w.flatMap(le)]]);
+  assert.equal((await f2.link.restartInfo()).crash.load, null, 'a crash: psr and the ETM trace are its own'); }
 assert.match(resetCause({why: null, p3: 0x02, rst: 0x1}).text, /brown-out.*VDDIO low \(P3_RST_SRC 0x02, RST_SRC 0x1\)/);
 assert.match(resetCause({why: null, p3: 0x02, rst: 0x20}).text, /planned restart.*VDDIO low, core reset/, 'a dip long ago, then an install');
 
