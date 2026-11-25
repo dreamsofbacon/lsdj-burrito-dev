@@ -32,6 +32,7 @@ import {FULL_LSDJ} from './lsdj-rom.js';
 import {savHeader, HEADER, HEADER_SIZE, BLOCK_COUNT} from './lsdj-sav.js';
 import {readOffsets as keyReads, songKeys} from './song-key.js';
 import {logEvent, logText, clearLog} from './conn-log.js';
+import {channelSteps, chainChannel, chainInfo, songInfo, chips as liveChips} from './dj-info.js';
 import {fromSlot, KEYS as PRESET_KEYS} from './presets.js';
 
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
@@ -385,8 +386,7 @@ const LIVE_OLD_MS = 4000;
 function chainEndOf(o, t, bpm) {
   const l = o?.live;
   if (!l?.chainPos || !l.chainLen || !l.rows || t - (l.gotAt ?? -Infinity) > LIVE_OLD_MS) return null;
-  let c = null;
-  for (let k = 0; k < 4; k++) if ((l.playing >> k) & 1 && l.chainPos[k] != null && l.chainLen[k] && l.rows[k] != null && (c == null || l.chainLen[k] > l.chainLen[c])) c = k;
+  const c = chainChannel(l);   /* (dj-info.js: the jog's chain count uses the same one) */
   if (c == null) return null;
   return chainEnd(l.chainPos[c], l.chainLen[c], l.rows[c] & 15, ((l.askedAt ?? t) + (l.gotAt ?? t)) / 2, bpm, t);
 }
@@ -926,7 +926,8 @@ async function pollDeck(d) {
     if (now() - (d.savAt || 0) > SAV_MS) await deckSav(d, l).catch(() => {});   /* (an import under way: next time) */
     await deckSong(d, l).catch(e => { d.songErr = String(e?.message ?? e); });   /* (kept for the tests; tried again next poll) */
     await deckPresets(d, l).catch(() => {});
-    if (deckView(d) === 'rows') { await readMap(d, l); drawMap(d); }   /* (read only while the rows show) */
+    if (deckView(d) === 'rows') { await readMap(d, l); drawMap(d); }   /* (read only while the rows show: the jog's "song
+                                                                     loops in" too; Screen keeps its link for the screen) */
   } catch { d.live = null; }
 }
 
@@ -1190,10 +1191,18 @@ function drawDeck(d) {
   u.pitchTxt = el('span', {className: 'dj-pitch-txt'});
   u.gap = el('span', {className: 'dj-gap'});
   u.phase = el('div', {className: 'dj-ring', ariaHidden: 'true'}, ...[0, 1, 2, 3].map(() => el('span')));
+  /* what LSDj is doing (FM-1 decks, from LIVE: dj-info.js): a ring per channel, outer PU1 to inner NOI, its phrase step
+     lit (dim: not playing; hollow: muted); the chain (phrase of, bars left) and the song row (rows to an empty one) in
+     the centre; chips at the bottom for what isn't as usual (SYNC, live mode, mutes, the echo freeze, battery) */
+  u.chRings = fm1 ? CHANNELS.map((n, c) => el('div', {className: `dj-ch dj-ch${c} off`, title: n})) : [];
+  u.chain = el('span', {className: 'dj-chain'});
+  u.songRow = el('span', {className: 'dj-songrow'});
+  u.chips = el('div', {className: 'dj-chips', ariaLive: 'polite'});
+  u.chipsKey = '';
   const jog = el('div', {className: 'dj-jogwheel', tabIndex: 0, role: 'group', ariaLabel: `Deck ${NAMES[d.i]} jog wheel: turn it (or hold an arrow key) to nudge`,
     title: 'Turn to nudge: clockwise faster, anticlockwise slower'},
-    el('div', {className: 'dj-platter'}, el('i', {className: 'dj-jog-mark'})), u.phase,
-    el('div', {className: 'dj-jog-centre'}, u.bpm, el('small', {textContent: 'BPM'}), u.pitchTxt, u.gap));
+    el('div', {className: 'dj-platter'}, el('i', {className: 'dj-jog-mark'})), u.phase, ...u.chRings,
+    el('div', {className: 'dj-jog-centre'}, u.bpm, el('small', {textContent: 'BPM'}), u.pitchTxt, u.gap, u.chain, u.songRow), u.chips);
   jogWheel(d, jog);
   u.jog = jog;
 
@@ -1549,8 +1558,26 @@ function tick() {
       : own != null ? `own clock · row ${hex2(own)}` : d.clock?.running ? 'no master' : 'stopped');
     if (u.info) setText(u.info, !d.live ? '' : [`On the FM-1: ${d.live.bpm} BPM · playing ${CHANNELS.filter((n, c) => (d.live.playing >> c) & 1).join(' ') || 'nothing'}`,
       d.live.level != null && d.live.level < 127 ? `volume ${Math.round(d.live.level / 1.27)} % from this page` : ''].filter(Boolean).join(' · '));
+    if (u.chain) liveShown(d, u, t);
     if (u.hold && d.live?.live != null) { setText(u.hold, d.live.live ? HOLD_ON : HOLD_OFF); u.hold.classList.toggle('on', d.live.live); u.hold.setAttribute('aria-pressed', String(d.live.live)); }
   });
+}
+/* the jog's LSDj lines and chips (dj-info.js), each tick: the chain (which phrase of how many, bars to its end; its
+   last bar lights the wheel's rim), the song row (in Rows, whose song rows are read anyway: rows to an empty one,
+   where LSDj goes back, flashing; Screen reads none, its link busy with the screen), the chips */
+function liveShown(d, u, t) {
+  const l = d.kind === 'fm1' ? d.live : null, bpm = playBpm(d);
+  const c = l ? chainInfo(l, t, bpm) : null;
+  setText(u.chain, c ? (c.of === 1 ? 'chain of 1' : `chain ${c.phrase}/${c.of} · ${c.last ? 'last bar' : `${c.bars} bars`}`) : '');
+  u.jog.classList.toggle('chain-last', !!c?.last && c.of > 1);
+  const s = l ? songInfo(l, t, deckView(d) === 'rows' ? d.map : null, d.mapFrom) : null;
+  setText(u.songRow, !s ? '' : s.loops == null ? `song row ${hex2(s.row)}` : s.loops === 1 ? 'song loops after this row' : `song loops in ${s.loops} rows`);
+  u.songRow.classList.toggle('near', s?.loops != null);
+  const list = l ? liveChips(l, t, {master: l.sync === 'lsdj' && isMasterFm1(d)}) : [], key = list.map(x => x.text + x.warn).join('|');
+  if (key !== u.chipsKey) {
+    u.chipsKey = key;
+    u.chips.replaceChildren(...list.map(x => el('span', {className: `dj-chip${x.warn ? ' warn' : ''}`, textContent: x.text})));
+  }
 }
 /* (20 times a second: a write only when the text changed, so the page isn't laid out again for nothing) */
 const setText = (e, s) => { if (e.textContent !== s) e.textContent = s; };
@@ -1568,8 +1595,20 @@ function animate() {
       u.beatShown = beat; [...u.phase.children].forEach((s, b) => s.classList.toggle('on', b === beat));
     }
     if (p != null) u.jog.style.setProperty('--turn', `${(p / BAR * 360).toFixed(1)}deg`);   /* once round a bar */
+    if (u.chRings?.length) {   /* each channel's phrase step (a write only when it moved) */
+      const steps = channelSteps(d.live, t, playBpm(d)), mute = d.live?.mute ?? 0;
+      u.chRings.forEach((r, c) => {
+        const s = steps[c], key = s == null ? 'off' : `${s}${(mute >> c) & 1 ? 'm' : ''}`;
+        if (r.dataset.k === key) return;
+        r.dataset.k = key;
+        r.classList.toggle('off', s == null); r.classList.toggle('muted', s != null && !!((mute >> c) & 1));
+        if (s != null) r.style.setProperty('--step', s);
+      });
+    }
   }
 }
+/* the tempo LSDj plays at: this page's clock while it clocks the deck, else LSDj's own (LIVE) */
+const playBpm = d => d.clock?.running ? d.bpm * (d.clock.factor || 1) : d.live?.bpm || 0;
 /* where a deck is in its bar, in clocks (0 .. BAR), or null when it isn't playing: this page's clock for it, or the
    FM-1's own phrase row (LIVE, 0.9.98) carried on at its tempo between polls, which come every 0.4 s or so, and less
    evenly on a busy link (the FM-1 in use also has Perform's own poll): a row is 6 clocks, 4 a beat */
