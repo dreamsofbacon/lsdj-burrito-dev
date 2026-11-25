@@ -324,14 +324,17 @@ function deckPlay(d) {
   const r = startRef(d);
   if (d.startTimer) say(`Deck ${NAMES[d.i]}: starts on ${r?.what || 'the master'}'s ${startWhat(d)} (Play again to cancel).`);
 }
-/* where Play counts from now: {phase (clocks), bpm, what} — the other deck while it plays (Start on: the playing
-   deck), its LSDj's phrase row when the FM-1 runs on its own clock (its bar only), else the master; null: nothing
-   plays */
+/* where Play counts from now: {phase (clocks), bpm, what} — counted on 'deck': always the OTHER deck (0.9.98-dev.25;
+   before, "the playing deck": the other deck only once it played, else the master without saying so, which read as
+   the page mixing up the decks, Colin 2026-11-25): its clock (also while it counts down to its own start: its phase
+   is negative until then, so this deck lands on its bars), or its LSDj's phrase row when that FM-1 runs on its own
+   clock (its bar only). The master when the other deck has nothing to count on; null: nothing plays */
 function startRef(d, t = now()) {
   if (d.startFrom === 'deck') {
-    const o = decks.find(o => o !== d && o.key && (o.clock?.running ? t >= (o.startAt || 0) : o.ownRow != null && o.live?.bpm));
+    const o = decks.find(o => o !== d && o.key);
     if (o?.clock?.running) return {phase: o.clock.phase(t), bpm: o.bpm * (o.clock.factor || 1), what: `deck ${NAMES[o.i]}`, deck: o};
-    if (o) return {phase: deckPos(o, t), bpm: o.live.bpm, what: `deck ${NAMES[o.i]}`, barOnly: true, deck: o};
+    if (o?.startTimer && o.startAt) return {phase: (t - o.startAt) * o.bpm * PPQN / 60000, bpm: o.bpm, what: `deck ${NAMES[o.i]}`, deck: o};
+    if (o?.ownRow != null && o.live?.bpm) return {phase: deckPos(o, t), bpm: o.live.bpm, what: `deck ${NAMES[o.i]}`, barOnly: true, deck: o};
   }
   const m = masterNow(t);
   return m.phase == null ? null : {phase: m.phase, bpm: m.bpm, what: 'the master'};
@@ -355,7 +358,7 @@ function armStart(d) {
   else {
     const unit = startUnit(d.startOn);
     at = startTime(r?.phase ?? null, r?.bpm ?? d.bpm, t, r?.barOnly ? Math.min(unit, BAR) : unit);
-    if (d.startOn === 'chain' && r) {   /* the end of the playing deck's chain, on its bar line when one is that close */
+    if (d.startOn === 'chain' && r) {   /* the end of the other deck's chain, on its bar line when one is that close */
       const end = chainEndOf(r.deck, t, r.bpm);
       if (end != null) {
         at = chainStart(at, r.bpm, end);
@@ -1244,10 +1247,10 @@ function drawDeck(d) {
   const util = el('div', {className: 'dj-util dj-small'},
     el('label', {}, 'Throws by ', by('throwBy')), el('label', {}, 'Filter by ', by('filterBy')),
     /* Play's start, this deck's own (dj.js START_ON) */
-    el('label', {className: 'dj-small dj-starton', title: 'When this deck\'s PLAY starts it. A bar is one LSDj phrase (16 rows): "Next bar" starts on the playing deck\'s next row 00; 2 to 16 bars count from where that deck started. PLAY counts down meanwhile; press it again to cancel.'},
+    el('label', {className: 'dj-small dj-starton', title: 'When this deck\'s PLAY starts it. A bar is one LSDj phrase (16 rows): "Next bar" starts on the other deck\'s next row 00 ("Next chain": its next chain); 2 to 16 bars count from where that deck started (the master when the other deck has nothing playing or waiting). PLAY counts down meanwhile; press it again to cancel.'},
       'Play starts ', sel(START_ON.map(([k, t]) => [k, t]), d.startOn, v => { d.startOn = v; store.set(`dj-start-on-${d.i}`, v); }, `Deck ${NAMES[d.i]} Play starts`)),
     el('label', {className: 'dj-small dj-starton', title: 'Counted on the other deck while it plays (its LSDj\'s phrases), or always on the master clock'},
-      'counted on ', sel([['deck', 'the playing deck'], ['master', 'the master']], d.startFrom, v => { d.startFrom = v; store.set(`dj-start-from-${d.i}`, v); }, `Deck ${NAMES[d.i]} count the start on`)),
+      'counted on ', sel([['deck', 'the other deck'], ['master', 'the master']], d.startFrom, v => { d.startFrom = v; store.set(`dj-start-from-${d.i}`, v); }, `Deck ${NAMES[d.i]} count the start on`)),
     fm1 && !has98 ? el('span', {textContent: 'Hold and Rows need 0.9.98.'}) : null);
   if (fm1) { u.info = el('span', {className: 'dj-info'}); util.append(u.info); }
 

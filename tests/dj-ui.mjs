@@ -225,7 +225,7 @@ export async function runDjUiTests() {
     {
       const startOn = document.querySelector('select[aria-label="Deck B Play starts"]'), from = document.querySelector('select[aria-label="Deck B count the start on"]');
       assert(document.querySelector('select[aria-label="Deck A Play starts"]')?.value === 'chain', 'each deck has its own Play starts');
-      assert(startOn && from && startOn.value === 'chain' && from.value === 'deck', `Play starts: next chain, on the playing deck: ${startOn?.value} ${from?.value}`);
+      assert(startOn && from && startOn.value === 'chain' && from.value === 'deck', `Play starts: next chain, on the other deck: ${startOn?.value} ${from?.value}`);
       deckBEl0().querySelector('.dj-play').click();   /* B stopped */
       assert(!deckB.clock.running, 'B stopped for 3c');
       choose(startOn, '2');
@@ -249,6 +249,29 @@ export async function runDjUiTests() {
       const off2 = Math.min(onA % 192, 192 - (onA % 192));
       assert(off2 < 0.5, `B's Start on A's every-2-bars: A at ${onA.toFixed(2)} clocks then`);
       choose(startOn, 'bar');
+      /* 3c2 (0.9.98-dev.25: counted on the OTHER deck, also while it only counts down to its own start; before, the
+         master then, which read as the decks mixed up): A stopped and started again on B's 4 bars, so it waits; B
+         stopped; B's Play (Next bar) lands on A's bars */
+      { const aEl0 = () => [...document.querySelectorAll('.dj-deck')][0];
+        const startA = document.querySelector('select[aria-label="Deck A Play starts"]'), fromA = document.querySelector('select[aria-label="Deck A count the start on"]');
+        aEl0().querySelector('.dj-play').click();   /* A stopped */
+        await until(() => !deckA.clock.running && !deckA.startTimer, 'A stopped for 3c2', 2000);
+        choose(startA, '4'); choose(fromA, 'deck');
+        await until(() => { const p = deckB.clock.phase() % 384; return p > 10 && p < 60; }, 'B early in its 4 bars', 10000);
+        A.midi.length = 0; B.midi.length = 0;
+        aEl0().querySelector('.dj-play').click();
+        assert(deckA.startTimer && !deckA.clock.running, 'A waiting for B\'s 4 bars');
+        deckBEl0().querySelector('.dj-play').click();   /* B stopped: A waits on */
+        await until(() => !deckB.clock.running, 'B stopped', 2000);
+        assert(deckA.startTimer, 'A still waiting');
+        B.midi.length = 0;
+        deckBEl0().querySelector('.dj-play').click();
+        assert(deckB.startTimer || deckB.clock.running, 'B waiting or started');
+        await until(() => A.midi.some(m => m[0] === 0xfa) && B.midi.some(m => m[0] === 0xfa), 'A and B both started', 15000);
+        const aAt = A.midi.find(m => m[0] === 0xfa).ts, bAt = B.midi.find(m => m[0] === 0xfa).ts, barMs = 4 * 60000 / deckA.bpm;
+        const bars = (aAt - bAt) / barMs, offBars = Math.abs(bars - Math.round(bars));
+        assert(offBars * 96 < 1, `B's Start on A's bars while A counted down (${bars.toFixed(3)} bars apart)`);
+        choose(startA, 'chain'); }
     }
 
     // 3d. Next chain (Colin: vital for a DJ): B (0.9.98, it says its chain) plays a 3-phrase chain that moves with B's
