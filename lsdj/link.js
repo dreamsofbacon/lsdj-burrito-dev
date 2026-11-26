@@ -448,12 +448,23 @@ export class Link {
    phrase of its chain it plays, 0..15, and the chain's phrases, 1..16; null before)}; unknown: null */
 const SYNCS = {0: 'off', 1: 'lsdj', 3: 'midi', 5: 'keybd'};
 export function liveDj(e) {
-  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null, speed: null};
+  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null, speed: null, rescue: null};
   const k = b => b === 0xFF ? null : b;
   return {rows: [...e.slice(0, 4)].map(k), songRows: [...e.slice(4, 8)].map(k), sync: SYNCS[e[8]] ?? null,
           live: e[9] === 0xFF ? null : !!e[9], level: k(e[10]),
           chainPos: e.length >= 19 ? [...e.slice(11, 15)].map(k) : null, chainLen: e.length >= 19 ? [...e.slice(15, 19)].map(k) : null,
-          speed: e.length >= 23 ? speedFrom(rd32(e, 19)) : null};
+          speed: e.length >= 23 ? speedFrom(rd32(e, 19)) : null,
+          rescue: e.length >= 33 ? rescueFrom(rd32(e, 23), rd32(e, 27), rd16(e, 31)) : null};
+}
+
+/* 0.9.98-dev.26, the stall rescue's counts since power-on (firmware board.c rescue_word; LIVE after the speed test):
+   when CPU0's main code sat on one instruction for 30 ms, the FM-1 first read the stuck code from an interrupt, then
+   held CPU1 between frames (LSDj stays on CPU1) until CPU0 moved -> {hold (freed once CPU1 was held), touch (freed by
+   the read), self (moved before CPU1 had stopped), fail (not freed in 25 ms), total, pc (the last one's), ms (how long
+   the last freed one lasted, 0 for one not freed)} */
+export function rescueFrom(w, pc, ms) {
+  const hold = w & 1023, touch = w >>> 10 & 1023, self = w >>> 20 & 63, fail = w >>> 26 & 63;
+  return {hold, touch, self, fail, total: hold + touch + self + fail, pc: pc >>> 0, ms};
 }
 
 /* 0.9.98-dev.24, one second of the FM-1's speed test (firmware board.c hw_speed_second; LIVE's last word, RESTART's

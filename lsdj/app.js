@@ -282,7 +282,23 @@ const speedSecond = s => `interrupts ${s.share}%, sound ${s.audUs} µs, RAM loop
 /* 0.9.98-dev.24: a healthy FM-1's speed test in the Log, the first time this page sees one and then every 10 minutes,
    so a hang's last seconds have something to be compared with */
 const speedSaid = new Map(), SPEED_EVERY_MS = 10 * 60 * 1000;
+/* 0.9.98-dev.26: each stall the FM-1 rescued (or couldn't) goes in the Log once, as the counts it keeps since power-on
+   move (a fresh page logs what it finds once, so an earlier one isn't lost) */
+const rescueSaid = new Map();
+function noteRescue(d, l) {
+  const r = l?.rescue; if (!d || !r) return;
+  const k = portKey(d), seen = rescueSaid.get(k), was = seen && r.total >= seen.total ? seen : null;   /* (fewer: it restarted, counts from 0) */
+  rescueSaid.set(k, r);
+  if (was ? r.total === was.total : !r.total) return;
+  const hex = `0x${r.pc.toString(16).toUpperCase().padStart(8, '0')}`;
+  const last = was && r.fail > was.fail && r.total - was.total === r.fail - was.fail
+    ? `CPU0 stalled at ${hex} and holding CPU1 for 25 ms did not free it (the hang recorder restarts it after 6 s, as before)`
+    : `CPU0 stalled at ${hex} for ${r.ms} ms and was freed without a restart (LSDj kept on CPU1)`;
+  logEvent(`FM-1 ${fm1No(d)} (${d.info.title || 'no LSDj'}, ${d.info.firmware}) stall rescue: ${last}. Since power-on: ${r.hold} freed by holding CPU1, `
+    + `${r.touch} by reading the stuck code, ${r.self} freed on their own, ${r.fail} not freed.`);
+}
 function noteSpeed(d, l) {
+  noteRescue(d, l);
   if (!d || !l?.speed) return;
   const k = portKey(d), at = speedSaid.get(k);
   if (at != null && Date.now() - at < SPEED_EVERY_MS) return;
