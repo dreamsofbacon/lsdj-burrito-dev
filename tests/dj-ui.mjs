@@ -309,7 +309,8 @@ export async function runDjUiTests() {
       const was = {startOn: startOnA.value, from: fromA.value, synced: deckA.synced, playing: B.playing, bpm: B.lsdjBpm};
       for (const [i, d] of [[0, deckA], [1, deckB]]) if (d.clock?.running || d.startTimer) { play(i); await until(() => !d.clock?.running && !d.startTimer, `deck ${i} stopped`, 2000); }
       const bpm = djState().master.bpm, perMs = bpm * 24 / 60000, t0 = performance.now() - (djState().master.clock.phase() + 30) / perMs;
-      const bPhase = t => (t - t0) * perMs;   /* B's LSDj: 30 clocks past the master's bars, at its tempo */
+      let seg = {t: t0, p: 0, perMs};   /* B's LSDj: 30 clocks past the master's bars, at its tempo (then changed below) */
+      const bPhase = t => seg.p + (t - seg.t) * seg.perMs, reseg = (perMs, shift = 0) => { const t = performance.now(); seg = {t, p: bPhase(t) + shift, perMs}; };
       B.lsdjBpm = bpm; B.chain = {phase: () => bPhase(performance.now()), len: 1}; B.playing = 15;
       await until(() => deckB.ownRow != null, 'B on its own clock: the page follows its row', 4000);
       choose(startOnA, 'chain'); choose(fromA, 'deck');
@@ -322,14 +323,36 @@ export async function runDjUiTests() {
       await sleep(1200);
       const gap = offset(deckA.clock.phase(), djState().master.clock.phase());
       assert(Math.abs(gap) < 0.75 && !deckA.bendTimer && (deckA.clock.factor || 1) === 1, `Sync leaves A on B's bar (the master started with it): gap ${gap?.toFixed(2)} clocks, bend ${deckA.clock.factor}`);
+      /* 3f. B's own clock moves while A plays: the master (and A, synced) follow it, by a trim of 1 % at most for a
+         small gap, and A stays within about half a row of B: a slip of 4 clocks, then 0.5 % fast, then a new tempo */
+      const abGap = () => { const t = performance.now(); return offset(deckA.clock.phase(t), bPhase(t)); };
+      const watch = async (ms, what) => {
+        let most = 0, trim = 0;
+        for (const end = performance.now() + ms; performance.now() < end; await sleep(50)) trim = Math.max(trim, Math.abs(djState().master.trim - 1));
+        for (const end = performance.now() + 1500; performance.now() < end; await sleep(50)) most = Math.max(most, Math.abs(abGap()));
+        assert(most < 3.5, `${what}: A kept within half a row of B (most ${most.toFixed(2)} clocks off at the end)`);
+        return trim;
+      };
+      reseg(perMs, 4);
+      const slipTrim = await watch(3500, 'B slipped 4 clocks');
+      assert(slipTrim > 0 && slipTrim <= 0.0101, `a small slip: the master trimmed, 1 % at most: ${slipTrim}`);
+      reseg(perMs * 1.005);
+      await watch(8000, 'B 0.5 % fast');
+      B.lsdjBpm = bpm + 4; reseg((bpm + 4) * 24 / 60000);
+      await until(() => djState().master.bpm === bpm + 4 && deckA.bpm === bpm + 4, `B's new tempo: the master and A take it: ${djState().master.bpm} ${deckA.bpm}`, 3000);
+      await watch(5000, 'B at a new tempo');
+      B.lsdjBpm = bpm; reseg(perMs);
+      await until(() => djState().master.bpm === bpm, `back to ${bpm}`, 3000);
       /* back as before: B on this page's clock, A as it was */
       play(0); await until(() => !deckA.clock?.running, 'A stopped', 2000);
-      B.chain = null; B.playing = was.playing; B.lsdjBpm = was.bpm;
+      B.chain = null; B.playing = was.playing;
       if (deckA.synced !== was.synced) els()[0].querySelector('.dj-sync').click();
       choose(startOnA, was.startOn); choose(fromA, was.from);
       for (let i = 0; i < 4; i++) { deckB.seenPlaying = false; await sleep(400); }
       play(1); await until(() => deckB.clock?.running, 'B playing again', 15000);
+      B.lsdjBpm = was.bpm;
       play(0); await until(() => deckA.clock?.running, 'A playing again', 15000);
+      assert(djState().master.trim === 1, `no trim once no deck plays on its own clock: ${djState().master.trim}`);
     }
 
     // 4. a stem kill (NOI on A, now) and the DJ filter (A to low-pass): sent to A only

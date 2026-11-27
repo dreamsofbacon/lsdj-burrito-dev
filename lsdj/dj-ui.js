@@ -19,7 +19,7 @@
 //   on that FM-1's link, or (0.9.98) the song row map: click a row to cue it.
 import {startClock, clampBpm, PPQN, CLOCK, START, CONTINUE, STOP, LOOKAHEAD_MS, workerTimer} from './midiclock.js';
 import {sameFm1, OP} from './link.js';
-import {BAR, BEAT, NUDGE, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainEnd, chainStart, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
+import {BAR, BEAT, NUDGE, SYNC_MAX_BEND, offset, syncBend, nextOn, START_ON, startUnit, startTime, chainEnd, chainStart, countIn, crossfade, CURVES, djFilter, tapper, clockMeter} from './dj.js';
 import {PRESETS, preset, readMidi, actionFor, out, learnRule, saveLearned, loadLearned} from './mixers.js';
 import {stepBpm, repeater, scaleBpm, glide, glideAt, GLIDE_BARS, PITCH_RANGES, rangeText, pickRange, pitchOf, pitchFree, rangeFor, bpmOfPitch, PADS, loadPads, savePads} from './dj-tempo.js';
 import {unpackFx, packFx, unpackReverb, packReverb, packReverbSends, CHANNELS, firmwareNumber, unpackSettings, PRESETS as THEME_COLOURS, CUSTOM_THEME, THEMES, unpackMidi, packMidi, paramSet, PARAM} from './fx-model.js';
@@ -71,6 +71,7 @@ function runDue() {
    glide: one under way ({from, to, length, pos: clocks so far, at}); pending: a change waiting for the bar */
 const master = {bpm: clampBpm(+store.get('dj-bpm', 120)), clock: null, source: 'page', ext: null, tap: tapper(),
   whole: store.get('dj-whole', '0') === '1',
+  trim: 1, steerEnd: 0, anchorBpm: null,   /* steerMaster: the master kept on a deck whose LSDj plays on its own clock */
   pads: loadPads(store.get('dj-pads', '[]')), onBar: store.get('dj-tempo-bar', '0') === '1', padGlide: store.get('dj-pad-glide', '0') === '1',
   glideBars: GLIDE_BARS.includes(+store.get('dj-glide-bars', 8)) ? +store.get('dj-glide-bars', 8) : 8, glide: null, pending: 0,
   };
@@ -432,6 +433,7 @@ function deckSync(d) {
   say(`Deck ${NAMES[d.i]}: synced to the master, ${bpmText(d.bpm)} BPM` + (d.clock?.running ? '.' : ': Play starts it on the master\'s bar.'));
 }
 function setSynced(d, on) {
+  if (d.synced && !on && !d.bendTimer && d.clock?.factor !== 1) d.clock.bend(1);   /* (the master's trim let go too) */
   d.synced = on;
   d.ui?.sync?.classList.toggle('on', on); d.ui?.sync?.setAttribute('aria-pressed', String(on));
 }
@@ -439,17 +441,53 @@ function setSynced(d, on) {
 function deckBend(d, factor, ms = 0) {
   cancelLater(d.bendTimer); d.bendTimer = 0;
   d.clock?.bend(factor);
-  if (ms) d.bendTimer = later(ms, () => { d.bendTimer = 0; d.clock?.bend(1); });
+  if (ms) d.bendTimer = later(ms, () => { d.bendTimer = 0; d.clock?.bend(d.synced ? master.trim : 1); });
+}
+/* ---------- the master kept on a deck whose LSDj plays on its own clock (LIVE mode) ----------
+   The page can't clock that FM-1, so with one such deck playing the master follows it instead, and every synced deck
+   follows the master as before: its tempo (each time its LSDj's tempo changes), and its bar (from LIVE: a row a poll,
+   good to about half a row), by a trim of at most 1 % on the master that the synced decks take with it (they move
+   together, nothing to chase). A gap of more than a row (a cue or a jump on that FM-1): at once when no deck plays on
+   this page's clock (the master is only a reference then), else as Sync closes one. */
+const STEER_SLACK = 3, STEER_MAX = 0.01, STEER_MIN_MS = 800;   /* clocks (half a row), the trim, the shortest */
+function anchorDeck() {
+  if (master.source !== 'page' || !master.clock?.running) return null;
+  const own = decks.filter(o => o.key && !o.clock?.running && !o.startTimer && o.ownRow != null && o.live?.bpm);
+  return own.length === 1 ? own[0] : null;
+}
+function setTrim(f) {
+  master.trim = f; master.clock?.bend(f);
+  decks.forEach(d => { if (d.synced && d.clock?.running && !d.bendTimer && !d.nudging) d.clock.bend(f); });
+}
+function steerMaster(t) {
+  const o = anchorDeck();
+  if (!o) { master.anchorBpm = null; master.steerEnd = 0; if (master.trim !== 1) setTrim(1); return; }
+  if (o.live.bpm !== master.anchorBpm) {   /* its LSDj's tempo, each time it changes (a tempo set here after stays) */
+    master.anchorBpm = o.live.bpm;
+    if (clampBpm(o.live.bpm) !== master.bpm) { setMasterBpm(o.live.bpm); say(`Master: ${bpmText(master.bpm)} BPM, deck ${NAMES[o.i]}'s (its LSDj plays on its own clock).`); }
+  }
+  if (master.steerEnd) { if (t < master.steerEnd) return; master.steerEnd = 0; setTrim(1); }
+  if (Math.abs(o.live.bpm - master.bpm) > 0.5) return;   /* another tempo chosen here: its bars aren't the master's to keep */
+  const pos = deckPos(o, t), mp = master.clock.phase(t);
+  if (pos == null || mp == null) return;
+  const gap = offset(mp, pos), clock = 60000 / (master.bpm * PPQN);   /* clocks the master is behind it */
+  if (Math.abs(gap) <= STEER_SLACK) return;
+  if (Math.abs(gap) > 2 * STEER_SLACK && !decks.some(d => d.clock?.running || d.startTimer)) {
+    const m = master.clock; m.stop(); m.start(t + ((BAR - pos) % BAR) * clock); return;   /* its next bar */
+  }
+  const most = Math.abs(gap) > 2 * STEER_SLACK ? SYNC_MAX_BEND : STEER_MAX, ms = Math.max(STEER_MIN_MS, Math.abs(gap) * clock / most);
+  setTrim(1 + gap * clock / ms); master.steerEnd = t + ms;
 }
 /* a synced deck: the master's tempo; its bar onto the master's (at once: any gap; later: past the slack) */
 function followMaster(d, atOnce = false) {
   const t = now(), m = masterNow(t);
   if (m.bpm && d.bpm !== clampBpm(m.bpm)) { d.bpm = clampBpm(m.bpm); d.clock?.setTempo(d.bpm); showDeckBpm(d); }
   if (!d.clock?.running || m.phase == null || d.bendTimer || d.nudging) return;
+  if (d.clock.factor !== master.trim) d.clock.bend(master.trim);   /* (moving with the master's trim) */
   const gap = offset(d.clock.phase(t), m.phase);
   if (gap == null || Math.abs(gap) < (atOnce ? 0.05 : LOCK_SLACK)) return;
   const {factor, ms} = syncBend(gap, d.bpm);
-  if (factor !== 1) deckBend(d, factor, ms);
+  if (factor !== 1) deckBend(d, factor * master.trim, ms);
 }
 /* nudge: faster / slower while held; it lets go of Sync (by hand from then on) */
 const nudge = (d, dir) => {
@@ -1542,6 +1580,7 @@ function tick() {
     if (n.textContent !== s) n.textContent = s;
     if (b.disabled !== off) b.disabled = off;
   });
+  steerMaster(t);   /* (first: the synced decks follow where it puts the master) */
   decks.forEach(d => { if (d.synced) followMaster(d); });   /* Sync: the master's tempo and bar, kept */
   decks.forEach(d => {
     const u = d.ui;
