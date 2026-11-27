@@ -10,7 +10,7 @@ import {opens, needsText} from './lsdj-sets.js';
 import {libraryFiles, addToLibrary, removeFromLibrary} from './kit-library.js';
 import {listKits, crc32, planRom} from './lsdj-rom.js';
 import {withOpenSong, savBody, splitSav, HEADER, HEADER_SIZE} from './lsdj-sav.js';
-import {openCartMaker, fitInWorker} from './cart-maker.js';
+import {fitInWorker} from './cart-work.js';
 import {logEvent} from './conn-log.js';
 import {loadTemplate, prepareLsdjFirmware} from './lsdj-firmware.js';
 import {installOn, checkPackage, REPLUG} from './install.js';
@@ -43,7 +43,7 @@ const say = (text, cls = 'hint') => { if (statusEl) { statusEl.textContent = tex
 async function refreshFiles() { files = new Map((await libraryFiles()).map(f => [f.id, f])); }
 const bytesOf = id => files.get(id)?.bytes || null;
 
-/* a ROM and a save (bytes) -> a crate item; used by Songs & kits, Sets and New cart… too. color: a preset or
+/* a ROM and a save (bytes) -> a crate item; used by Songs & kits and Studio › Build too. color: a preset or
    #rrggbb; img: a picture's bytes (cart-label.js shrinkImage). A cartridge is never made without its LSDj (Colin):
    songs given alone ask which LSDj goes with them (choose-lsdj.js; prefer: a cartridge id to pick first). -> the
    item, or null (cancelled: nothing added). An LSDj alone is a cartridge with no songs yet. */
@@ -54,7 +54,7 @@ export async function addToCrate({name, rom = null, sav = null, color = 'grey', 
     if (!c) return null;
     rom = c.bytes; from = 'file';
   }
-  /* an LSDj too big for the FM-1 (all its kits): made smaller for its songs, as the cart maker does */
+  /* an LSDj too big for the FM-1 (all its kits): made smaller for its songs, as Studio › Build does */
   if (sav && !(await fitsAsIs(rom))) {
     say(`${name}: making its LSDj fit the FM-1 (only the kits and samples its songs play)…`);
     const carts = await cartsFor({name, rom, sav});
@@ -81,7 +81,7 @@ function fitsNow(rom, id = null) {
 }
 async function fitsAsIs(rom) { await capacity(); return fitsNow(rom); }
 /* songs (a .sav) and an LSDj -> cartridges [{name, rom, sav}] that load on the FM-1: the LSDj whole when it fits,
-   else holding only the kits and samples the songs play (cart-core.js fitCarts, in the cart maker's worker: the
+   else holding only the kits and samples the songs play (cart-core.js fitCarts, in the page's cartridge worker: the
    decks keep time). each: a cartridge a song. Also Songs & kits' cartridge-per-song download. */
 export async function cartsFor({name, rom, sav, each = false}) {
   if (await fitsAsIs(rom))
@@ -587,7 +587,7 @@ function drawList() {
   }
   listEl.replaceChildren(...(items.length
     ? shown.length ? shown.map(i => card(i, reorder)) : [el('p', {className: 'hint', textContent: `Nothing matches "${query}".`})]
-    : [el('p', {className: 'hint', textContent: 'Empty. Open an LSDj and its .sav, grab a deck, or use "Add to the DJ crate" in Songs & kits or Sets: each card is a whole cartridge, an LSDj and its songs. Then drag a card onto a deck, or press Load.'})]));
+    : [el('p', {className: 'hint', textContent: 'Empty. Open an LSDj and its .sav, grab a deck, or make cartridges with "Make carts in Build": each card is a whole cartridge, an LSDj and its songs. Then drag a card onto a deck, or press Load.'})]));
 }
 function draw() { drawGrabs(); drawList(); }
 
@@ -625,7 +625,7 @@ export async function mountCrate(box) {
   root.replaceChildren(
     el('div', {className: 'crate-top'}, toggle, countEl, views, search, sorter,
       btn('Open files…', () => pick.click(), {title: 'An LSDj (.gb) and its songs (.sav): pick both (the same name pairs them), or a .sav alone and choose its LSDj. Kept in this browser only'}), pick,
-      btn('New cart…', () => void openCartMaker({addToCrate}), {className: 'crate-new', title: 'Make carts from songs, projects and your LSDj files: each holds only the kits its songs play'}),
+      btn('Make carts in Build →', () => { location.hash = '#studio'; }, {className: 'crate-new', title: 'Studio › Build: your songs, saves, projects and LSDj files made into cartridges, each holding only the kits its songs play; add them to this crate from there'}),
       btn('Export cartridges', exportAll, {title: 'Every whole cartridge (LSDj + songs) as a .zip: a folder each with its .gb and .sav'}), grabsEl),
     el('div', {className: 'crate-body'}, listEl, statusEl));
   openCrate(store.get('dj-crate-open', '0') === '1');

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// lsdj/cart-core.js and the .lsdprj reader: the crate's cart maker with made-up ROMs, kits and songs only
+// lsdj/cart-core.js and the .lsdprj reader: the cartridge work behind Studio › Build and the crate, with made-up ROMs, kits and songs only
 // (node tests/cart.mjs). No real LSDj or song is used: users bring their own.
 import assert from 'node:assert/strict';
 import {BANK, kitSlots, parseKit, buildKit} from '../lsdj/lsdj-kit.js';
@@ -34,7 +34,7 @@ const sX = song([{ins: 0, k1: 3}, {ins: 1, k1: 10}], [0x10, 0x10]);   /* plays k
   assert.equal(S.projectKits(two, []).rule, 'none');
 }
 
-/* ---- the cart maker: files in, songs matched, carts out ---- */
+/* ---- files in, songs matched, carts out ---- */
 const rom = lsdj('9.3.9', [KA, KB]);   /* kit 00 ALPHA, 01 BRAVO */
 const sB = song([{ins: 0, k1: 1}], [0x30]);   /* plays kit 01 */
 const sMissing = song([{ins: 0, k1: 6}], [0x10]);   /* plays kit 06: nobody has it */

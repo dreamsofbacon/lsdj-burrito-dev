@@ -8,7 +8,7 @@
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
 <link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/backups.js"><link rel="modulepreload" href="lsdj/cartridges.js"><link rel="modulepreload" href="lsdj/carts-ui.js"><link rel="modulepreload" href="lsdj/choose-lsdj.js"><link rel="modulepreload" href="lsdj/choose-fm1.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
 <link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/crate.js">
-<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/dj-info.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/studio-ui.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
+<link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/dj-info.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-work.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/studio-ui.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
 if (location.pathname.startsWith('/lsdj-burrito-dev/')) { document.documentElement.classList.add('devpage');
@@ -420,40 +420,10 @@ body.studio-wide main,body.studio-wide .top-in{max-width:1320px}
 .studio-ask{margin-top:6px;padding:8px 10px;border:1px solid var(--accent);border-radius:9px;font-size:13px}
 .studio-ask p{margin:0 0 6px}
 @media (max-width:600px){.studio-group-where{display:none}.studio-carts-acts{margin-left:0}}
-/* the cart maker (lsdj/cart-maker.js): a panel over the DJ layout, songs on the left, the carts on the right */
-.cart-maker{position:fixed;inset:3vh 3vw;z-index:60;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:14px;color:var(--ink);
-  background:var(--card);border:1px solid var(--line);box-shadow:0 20px 60px #000c}
-.cart-maker[hidden]{display:none}
-.cart-maker.drop{outline:3px dashed var(--accent);outline-offset:-6px}
-.cart-maker.busy .cm-grid{opacity:.6;pointer-events:none}
-.cm-head{display:flex;align-items:baseline;gap:12px}
-.cm-head h3{margin:0}.cm-head p{margin:0;flex:1}
-.cm-close{flex:none;padding:4px 10px}
-.cm-add{flex-wrap:wrap;align-items:center}
-.cm-status{margin:0;min-height:1.2em}
-.cm-grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr);gap:12px}
-.cm-songs,.cm-side{min-height:0;overflow:auto;scrollbar-width:thin}
-.cm-songbar{position:sticky;top:0;z-index:1;flex-wrap:wrap;align-items:center;padding:4px 0;background:var(--card)}
+/* Studio › Build's search, and its kit and LSDj choices (studio-ui.js) */
 .cm-search{min-width:12em;flex:1}
-.cm-table{width:100%;font-size:.88em}
-.cm-table td{vertical-align:top;padding:4px 6px}
-.cm-table tr.off{opacity:.45}
-.cm-from{font-size:.82em;max-width:16em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cm-chip{white-space:nowrap;font-weight:600}
 .cm-kits div{white-space:nowrap}
 .cm-kitpick,.cm-made{max-width:14em;font-size:.9em}
-.cm-empty{padding:30px 10px;text-align:center;border:2px dashed var(--line);border-radius:12px}
-.cm-side h4{margin:0 0 6px}
-.cm-field{display:flex;align-items:center;gap:6px;margin:6px 0}
-.cm-field select,.cm-field input{flex:1;min-width:0}
-.cm-plans{display:flex;flex-direction:column;gap:2px;margin:6px 0}
-.cm-cart{margin:8px 0;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--card) 85%,#000)}
-.cm-cart.over{border-color:var(--warn)}
-.cm-cart p{margin:4px 0}
-.cm-cartsongs{font-size:.85em}
-.cm-meter{height:6px;margin:6px 0;border-radius:3px;background:#0006;overflow:hidden}
-.cm-meter i{display:block;height:100%;background:var(--accent)}
-@media (max-width:800px){.cm-grid{grid-template-columns:1fr}.cart-maker{inset:0;border-radius:0}}
 .crate-toggle{font-weight:700;padding:6px 12px}
 .crate-body{display:none;margin-top:6px}
 .dj-crate.open .crate-body{display:block}
@@ -486,16 +456,15 @@ body.studio-wide main,body.studio-wide .top-in{max-width:1320px}
   background:transparent;color:inherit;font:400 14px/1.2 var(--font-name);letter-spacing:.03em}
 .crate-label .crate-name:focus{outline:2px solid color-mix(in srgb,var(--lab-ink) 70%,transparent);outline-offset:2px}
 .crate-meta{margin:0;font:500 11px/1.3 var(--font-data);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* songs an LSDj can't open (saved by a newer one): on the label, in the load question, in New cart… */
+/* songs an LSDj can't open (saved by a newer one): on the label, in the load question */
 .crate-label .crate-needs{margin:0;padding:2px 5px;border-radius:4px;background:#000a;color:#ffd27a;font:600 10px/1.3 var(--font-data)}
 .crate-ask .crate-needs{margin:4px 0 0}
-.cm-needs{margin-top:3px;font-size:11px}.cm-cartlsdj{margin:4px 0 0;font-size:11px}
 .crate-kind{padding:1px 5px;border-radius:4px;background:#0003;font:600 10px/1.4 var(--font-data);letter-spacing:.04em}
 .crate-on{padding:1px 6px;border-radius:4px;background:var(--accent);color:var(--accent-ink);font:700 10px/1.4 var(--font-data);letter-spacing:.06em}
 .crate-colour{width:16px;height:16px;padding:0;border-radius:50%;border:2px solid color-mix(in srgb,var(--lab-ink) 70%,transparent);background:var(--lab);
   box-shadow:0 0 0 1px #0004}
 /* a cart's label (lsdj/cart-label.js): its picture across the top of the label; the dot opens the editor: the colour
-   swatches, any colour, Picture… (the crate, and each cart in New cart…) */
+   swatches, any colour, Picture… (the crate, and each card in Studio › Build) */
 .crate-colour.on{box-shadow:0 0 0 2px var(--accent)}
 .crate-label.with-art{padding-top:0;overflow:hidden}
 .crate-art{display:block;width:calc(100% + 18px);margin:0 -9px 2px;height:84px;object-fit:cover;border-radius:6px 6px 0 0}

@@ -377,8 +377,8 @@ export async function addLsdsng(files) {
   if (left.length) say(`${added.length ? `Added ${added.join(', ')}. ` : ''}The save is full: ${left.length === 1 ? 'one song' : `${left.length} songs`} didn't go in. Build can take them all.`, 'warn');
   else say(`Added ${added.join(', ')}.`, 'ok');
 }
-/* an LSDj chosen here, kept with the cartridges (Studio › Build and Install use them); never one made by the cart
-   makers (their LSDj holds only some kits: cart-built, studio-ui.js) */
+/* an LSDj chosen here, kept with the cartridges (Studio › Build and Install use them); never one made in
+   Build (its LSDj holds only some kits: cart-built, studio-ui.js) */
 export async function rememberRom(rom, name, from = 'file') {
   let made = [];
   try { made = JSON.parse(localStorage.getItem('cart-built') || '[]') || []; } catch { /* none kept */ }

@@ -6,10 +6,12 @@
 // When a card holds more than one cartridge can (32 songs, the .sav's 191 blocks, the FM-1's room, the LSDj's kit
 // slots) it either makes several cartridges ("It makes more cartridges": FRIDAY 1, FRIDAY 2…) or the songs past what
 // fits move into a new card ("Start a new card"). Made cartridges go to the DJ crate, to Install (their songs sent
-// after), or download as NAME.gb + NAME.sav. The planning is cart-core.js (studioView / autoSort / buildStudio) in its
-// own worker (cart-worker.js), so the DJ decks keep time. Songs & kits hands a save that is full over here (the
-// 'studio-import' event). Copies only: nothing leaves this browser.
+// after), or download as NAME.gb + NAME.sav. The planning is cart-core.js (studioView / autoSort / buildStudio) in
+// the page's cartridge worker (cart-work.js), so the DJ decks keep time. The DJ crate's "Make carts in Build" comes
+// here, and Songs & kits hands a save that is full over (the 'studio-import' event). Copies only: nothing leaves
+// this browser.
 import {libraryFiles, addToLibrary, hashOf} from './kit-library.js';
+import {cartWork as call} from './cart-work.js';
 import {labelEditor, paintLabel, shrinkImage} from './cart-label.js';
 import {FULL_LSDJ, buildSlot} from './lsdj-rom.js';
 import {kitSlots} from './lsdj-kit.js';
@@ -22,24 +24,19 @@ const hex = n => n.toString(16).toUpperCase().padStart(2, '0');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const two = n => String(n).padStart(2, '0');
 const WANTED = /\.(sav|lsdsng|lsdprj|gbc?|kit)$/i, DRAG = 'application/x-studio-song';
-const BUILT = 'cart-built';   /* the ids of LSDj files made by the cart makers: never a source for matching songs (cart-maker.js) */
+const BUILT = 'cart-built';   /* the ids of LSDj files made here: never a source for matching songs (songs-ui.js reads it too) */
 const MODE = 'studio-full';   /* what a full card does, this viewer's choice: 'split' | 'new' */
 const SLOTS = 32, BLOCKS = 191, SHOWN = 8, ROWS_MAX = 400;
 const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* this visit */ } }};
 
-let root = null, worker = null, nextId = 1, pending = new Map(), capacity = 502016, viewSeq = 0, listening = false, ready = null;
+let root = null, capacity = 502016, viewSeq = 0, listening = false, ready = null;
 const files = {pick: null, folder: null, rom: null};
 const ui = {carts: [], nextCart: 1, choices: {madeWith: {}, kitPick: {}}, baseId: null, query: '', filter: 'all', view: null, made: {}, busy: '',
   sel: new Set(), anchor: null, groupOpen: new Map(), kitsOpen: null, labelOpen: null, showAll: new Set(), ask: null, drag: null,
   mode: store.get(MODE, 'split') === 'new' ? 'new' : 'split'};
 
-function call(type, m = {}, transfer = []) {
-  worker ??= Object.assign(new Worker(new URL('./cart-worker.js', import.meta.url), {type: 'module'}), {
-    onmessage: ({data}) => { const p = pending.get(data.id); pending.delete(data.id); if (p) data.ok ? p.resolve(data.result) : p.reject(Error(data.error)); },
-    onerror: e => { for (const p of pending.values()) p.reject(Error(e.message || 'The studio stopped.')); pending.clear(); }});
-  return new Promise((resolve, reject) => { const id = nextId++; pending.set(id, {resolve, reject}); worker.postMessage({id, type, ...m}, transfer); });
-}
-const say = (text, cls = 'hint') => { const s = root?.querySelector('.studio-status'); if (s) { s.textContent = text; s.className = `${cls} studio-status`; } };
+/* text: a string, or a list of strings and elements (a link) */
+const say = (text, cls = 'hint') => { const s = root?.querySelector('.studio-status'); if (s) { s.replaceChildren(...[].concat(text)); s.className = `${cls} studio-status`; } };
 async function guard(f) { try { await f(); } catch (e) { ui.busy = ''; say(e.message, 'bad'); console.error(e); draw(); } }
 const built = () => { try { return JSON.parse(store.get(BUILT, '[]')) || []; } catch { return []; } };
 function download(bytes, name, type = 'application/octet-stream') {
@@ -523,7 +520,7 @@ async function addOne(m) {
   await markBuilt(m);
   await addToCrate({name: m.title, rom: m.rom, sav: m.sav, color: lab.color || 'grey', img: lab.img || null, from: 'made'});
   m.added = true; await sendLibrary();
-  say(`${m.title} is in the DJ crate: load it onto a deck (Perform › DJ).`, 'ok'); draw();
+  say([`${m.title} is in the DJ crate: load it onto a deck in `, el('a', {href: '#live-sec', textContent: 'Perform › DJ'}), '.'], 'ok'); draw();
 }
 /* to Install with every kit ticked; its songs follow by themselves once the FM-1 reports that LSDj (songs-ui.js) */
 async function install(m) {

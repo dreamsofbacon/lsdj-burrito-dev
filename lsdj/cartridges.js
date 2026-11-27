@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Cartridges: the user's LSDj files kept in this browser (kit-library.js, kind 'rom'), each with what the page
 // knows about it: a name of its own, which kits Install puts on the FM-1 (chosen once, kept), and where it came
-// from (a file, read from an FM-1, or a kit edit of another cartridge: `parent`). Install, Songs and kits, Sets,
-// the crate and the cart maker all choose from these (the cartridge plan, phase 2). Older entries have none of
+// from (a file, read from an FM-1, or a kit edit of another cartridge: `parent`). Install, Songs and kits,
+// Studio › Build and the crate all choose from these (the cartridge plan, phase 2). Older entries have none of
 // the new fields and read as files.
 import {libraryFiles, addToLibrary, updateLibrary, removeFromLibrary} from './kit-library.js';
 import {checkRomFile, buildSlot, listKits} from './lsdj-rom.js';

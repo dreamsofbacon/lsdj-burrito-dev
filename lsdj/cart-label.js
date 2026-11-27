@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// A cart's label (the crate, lsdj/crate-ui.js, and New cart…, lsdj/cart-maker.js): its colour (one of CART_COLORS, or
+// A cart's label (the crate, lsdj/crate-ui.js, and Studio › Build's cards, lsdj/studio-ui.js): its colour (one of CART_COLORS, or
 // any colour as #rrggbb) and its picture (an image file, made small on this computer and kept in this browser's file
 // library as kind 'img'; never uploaded).
 import {CART_COLORS} from './crate.js';

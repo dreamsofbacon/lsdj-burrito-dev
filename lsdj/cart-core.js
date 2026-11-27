@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The crate's cart maker, without the page: songs from .sav / .lsdsng / .lsdprj files and LSDj ROMs / .kit files in;
+// Studio › Build's cartridge work, without the page: songs from .sav / .lsdsng / .lsdprj files and LSDj ROMs / .kit files in;
 // each song matched to the kits it plays (lsdj-sets.js resolveSongs: the LSDj it was made with, or a project's own
 // kits); carts planned (every sample in as many carts as it takes, or one cart with the most-played kits) and built
 // (an LSDj holding only the kits and samples the songs play, and a .sav). Pure: runs in a worker (cart-worker.js),
@@ -126,7 +126,7 @@ export function view(st, req, capacity) {
 }
 
 /* songs and the LSDj chosen for them -> cartridges that fit the FM-1: that LSDj holding only the kits and samples the
-   songs play, and a .sav (as the cart maker builds them; the crate never keeps one that can't load). rom: the LSDj;
+   songs play, and a .sav (as Studio › Build makes them; the crate never keeps one that can't load). rom: the LSDj;
    savs: [{name, bytes}]; each: a cartridge a song (else as few as it takes); capacity: the FM-1's slot.
    -> [{rom, sav, songs: [names], fits, kib, warnings}] */
 export function fitCarts({rom, savs, capacity, each = false}) {

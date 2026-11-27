@@ -6,12 +6,13 @@
 // moved at once, a missing kit left silent, both cards made and added to the crate; then 40 songs in one card: it
 // makes two cartridges, or ("Start a new card") its songs past 32 move into a new card.
 // runStudioFullSaveTests: Songs & kits, a save that is full: the songs that didn't go in are offered to Build, which
-// sorts them all into cartridges.
+// sorts them all into cartridges; and the DJ crate's "Make carts in Build →" opens Build.
 import {mountStudio, studioState} from '../lsdj/studio-ui.js';
 import {loadItems} from '../lsdj/crate.js';
 import {buildSav, writeLsdsng} from '../lsdj/lsdj-sav.js';
 import {kitOf, lsdj, song, blank} from './lsdj-fixtures.mjs';
 import {clearLibrary} from '../lsdj/kit-library.js';
+import {mountCrate} from '../lsdj/crate-ui.js';
 
 const assert = (v, m) => { if (!v) throw Error(typeof m === 'function' ? m() : m); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -102,7 +103,7 @@ export async function runStudioUiTests() {
   buttons('Cancel')[0].click();
   await until(() => !box.querySelector('.studio-ask'), 'Cancel: nothing installed');
   buttons('Add them all to the crate')[0].click();
-  await until(() => /is in the DJ crate/.test(status()) && [...box.querySelectorAll('.studio-cart .ok')].filter(x => x.textContent === 'In the crate.').length === 2, () => `added: ${status()}`, 15000);
+  await until(() => /is in the DJ crate/.test(status()) && box.querySelector('.studio-status a[href="#live-sec"]') && [...box.querySelectorAll('.studio-cart .ok')].filter(x => x.textContent === 'In the crate.').length === 2, () => `added: ${status()}`, 15000);
   assert(loadItems(localStorage.getItem('dj-crate')).length === 2, () => 'two cards in the crate: ' + (localStorage.getItem('dj-crate') || '').slice(0, 300));
 
   /* 40 songs in one card: two cartridges, every sample kept; or, Start a new card: the 8 past 32 in a card of their own */
@@ -144,6 +145,15 @@ export async function runStudioFullSaveTests() {
   await until(() => studio.querySelectorAll('.studio-cart').length === 2 && /sorted into 2 cartridges/.test(studio.querySelector('.studio-status').textContent),
     () => `two cartridges (32 + 3): ${studio.querySelectorAll('.studio-cart').length}; ${studio.querySelector('.studio-status').textContent}`);
   assert(studioState().carts.map(c => c.songIds.length).join() === '32,3', () => `32 + 3: ${studioState().carts.map(c => c.songIds.length)}`);
+  /* the DJ crate makes no cartridges of its own: its button opens Build */
+  location.hash = '#live-sec';
+  const crate = document.createElement('div'); document.body.append(crate);
+  await mountCrate(crate);
+  const go = [...crate.querySelectorAll('button')].find(b => b.textContent === 'Make carts in Build →');
+  assert(go, () => `the crate's button: ${[...crate.querySelectorAll('button')].map(b => b.textContent)}`);
+  go.click();
+  await until(() => location.hash === '#studio' && !document.getElementById('studio-sec').hidden, () => `Build opens from the crate: ${location.hash}`);
+  crate.remove();
   await clearLibrary();
-  return 'PASS Songs & kits, a full save: the 3 songs that did not fit offered to Build, which puts all 35 into two cartridges';
+  return "PASS Songs & kits, a full save: the 3 songs that did not fit offered to Build, which puts all 35 into two cartridges; the DJ crate's Make carts in Build opens Build";
 }
