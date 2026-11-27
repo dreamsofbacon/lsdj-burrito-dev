@@ -25,6 +25,8 @@ function route() {
     document.querySelectorAll('.studio-section').forEach(s => { s.hidden = s.id !== sec; });
     document.querySelectorAll('.studio-tabs a').forEach(a => a.classList.toggle('on', a.dataset.sec === sec));
   }
+  /* Studio › Build: wider, so the songs and the cartridges sit side by side (studio-ui.js) */
+  document.body.classList.toggle('studio-wide', view === 'studio' && (STUDIO_SEC[id] || 'studio-sec') === 'studio-sec');
   TABS.forEach(t => { $(t).hidden = t !== tab; });
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   /* Perform: the live controls as one 16:9 screen, the site's header folded away */

@@ -5,17 +5,18 @@
 //     it to the FM-1 (the FM-1's own import, as Songs › Import).
 // Kit names come from the user's own LSDj: the one chosen in Install, a ROM file chosen here, or the one on the
 // FM-1. Nothing is uploaded; works without an FM-1. Install's kit list shows the same ('songs-usage' event).
-// The parsing is lsdj-sav.js, lsdj-kit.js, lsdj-usage.js (tested in node).
+// The parsing is lsdj-sav.js, lsdj-kit.js, lsdj-usage.js (tested in node). A save holds 32 songs: songs added past
+// that (or past its 191 blocks) are offered to Studio › Build (studio-ui.js, the 'studio-import' event), which makes
+// as many cartridges as they take; making cartridges from several saves and songs is there too.
 import {parseSav, songBytes, buildSav, readLsdsng, writeLsdsng, nameBytes, nameText, splitSav, SavError, SAV_SIZE, SLOTS, BLOCK_COUNT} from './lsdj-sav.js';
 import {zipStore} from './zip.js';
 import {kitSlots, kitSampleNibbles, BANK} from './lsdj-kit.js';
 import {checkRomFile} from './lsdj-rom.js';
 import {kitUsage, usageAcross, romFit, bestRom} from './lsdj-usage.js';
-import {mountSetsUi, rememberRom} from './sets-ui.js';
 import {addToCrate, cartsFor} from './crate-ui.js';
 import {backups, KEEP} from './backups.js';
 import {storageState} from './kit-library.js';
-import {cartridges, cartName, matchCart} from './cartridges.js';
+import {cartridges, cartName, matchCart, addCartridge} from './cartridges.js';
 import {cartPicker} from './carts-ui.js';
 import {chooseLsdj} from './choose-lsdj.js';
 import {hashOf} from './kit-library.js';
@@ -63,7 +64,7 @@ export function sampleLabel(slots, n, i) {
   return smp ? smp.name.replace(/-+$/, '') || `#${i + 1}` : `#${i + 1}`;
 }
 /* ▶ for one kit sample: plays it as stored, at LSDj's 11468 Hz (no note pitch, loop or effects). None for an
-   empty sample. Also used by the kit library (sets-ui.js). */
+   empty sample. */
 export function playButton(bank, index, name) {
   const word = k => bank[2 * k] | bank[2 * k + 1] << 8;
   if (word(index + 1) <= word(index)) return null;
@@ -183,7 +184,28 @@ function draw() {
   if (!state.sav) return;
   if (state.needs) box.append(el('p', {className: 'warn', textContent: `These are ${state.needs.title}'s songs. Their kits are in ${state.needs.title}'s LSDj, not in the .sav: ` +
     `install ${state.needs.title}'s LSDj on the FM-1 first, then press Send to the FM-1 (it checks the FM-1 has that LSDj).`}));
+  if (state.full) box.append(fullNote());
   drawSongs(box); drawKits(box);
+}
+/* songs added past what the save holds: offered to Studio › Build with the save's own, all into cartridges */
+function fullNote() {
+  const f = state.full, n = state.items.length, used = BLOCK_COUNT - state.sav.freeBlocks;
+  return el('div', {className: 'st-full', role: 'group', ariaLabel: 'The save is full'},
+    el('b', {textContent: `This save is full: ${n} of ${SLOTS} songs${n < SLOTS ? `, ${used} of ${BLOCK_COUNT} blocks` : ''}. ` +
+      `The other ${f.files.length === 1 ? 'song' : `${f.files.length} songs`} you added didn't go in.`}),
+    el('p', {textContent: `A save holds ${SLOTS} songs, but cartridges don't stop there: Studio › Build puts all ${n + f.files.length} into as many cartridges as it takes, each with every sample its songs play.`}),
+    el('div', {className: 'row'},
+      el('button', {type: 'button', className: 'primary', textContent: `Make cartridges from all ${n + f.files.length} in Build →`, onclick: () => guard(async () => toBuild())}),
+      el('button', {type: 'button', textContent: `Keep these ${n} only`, onclick: () => { state.full = null; draw(); say(''); }})),
+    el('p', {className: 'hint', textContent: `Not added: ${f.names.join(', ')}`}));
+}
+async function toBuild() {
+  const name = /\.sav$/i.test(state.from) ? state.from : `${state.from || 'songs'}.sav`;
+  const list = [new File([state.sav.bytes], name), ...state.full.files];
+  /* the LSDj the kit names come from: kept once in this browser, so Build has it too */
+  if (state.rom) list.push(new File([state.rom], /\.gbc?$/i.test(state.romFrom) ? state.romFrom : 'LSDj chosen in Songs and kits.gb'));
+  state.full = null; draw();
+  document.dispatchEvent(new CustomEvent('studio-import', {detail: {files: list}}));
 }
 /* asks for the LSDj the songs were made with when it's needed: none chosen yet, or the one chosen lacks kits
    the songs play (made with another LSDj, or with kits of their own) */
@@ -225,17 +247,17 @@ function announce() {
 }
 
 /* ---- opening ---- */
-/* needs: for a song set's .sav, {title, dataCrc: async () -> the set LSDj's slot data CRC} (sets-ui.js) */
+/* needs: for a cartridge's .sav made in Studio › Build, {title, dataCrc: async () -> its LSDj's slot data CRC} (studio-ui.js) */
 export function openSave(bytes, from, needs = null) {
   if (bytes.length === SAV_SIZE + 16) bytes = bytes.subarray(0, SAV_SIZE);   /* (as Songs › Import, which asks first) */
   const sav = parseSav(bytes.slice());
-  Object.assign(state, {sav, from, items: itemsOf(sav), edited: false, needs});
+  Object.assign(state, {sav, from, items: itemsOf(sav), edited: false, needs, full: null});
   announce();
   const bad = state.items.filter(s => !s.song).length;
   say(`Opened ${from}: ${sav.songs.length} song${sav.songs.length === 1 ? '' : 's'}` + (bad ? `, ${bad} damaged.` : '.'), bad ? 'warn' : 'ok');
 }
-/* "Send to the FM-1": asks first; a set's songs (needs: {title, dataCrc}, sets-ui.js) only after checking the
-   FM-1 has that set's LSDj, which holds their kits (a .sav holds no samples) */
+/* "Send to the FM-1": asks first; a made cartridge's songs (needs: {title, dataCrc}, studio-ui.js) only after checking
+   the FM-1 has that cartridge's LSDj, which holds their kits (a .sav holds no samples) */
 export async function sendOpenSave() {
   if (!state.sav) throw new SavError('Open a .sav first.');
   if (!confirm('Replace the songs on the FM-1 with these? Export them first (Songs › Back up) if you want to keep them.')) return false;
@@ -246,7 +268,7 @@ export async function sendOpenSave() {
     if (!info || info.dataCrc !== await n.dataCrc()) {
       const text = info ? `The FM-1 has a different LSDj installed, not ${n.title}'s.` : `Couldn't check which LSDj the FM-1 has (${why}).`;
       say(`${text} ${n.title}'s songs play the kits in ${n.title}'s LSDj (a .sav holds no samples): install it first: ` +
-        `Songs & kits › "Install ${n.title} on the FM-1 (LSDj + songs)" does both.`, 'bad');
+        `in Studio › Build, ${n.title}'s "Install on the FM-1…" does both.`, 'bad');
       if (!confirm(`${text}\n\n${n.title}'s songs play the kits in ${n.title}'s own LSDj; a .sav holds no samples. ` +
         `With another LSDj their kit notes play the wrong samples or none.\n\nSend the songs anyway?`)) return false;
     }
@@ -256,9 +278,10 @@ export async function sendOpenSave() {
   say('Sent. LSDj restarted with these songs.', 'ok');
   return true;
 }
-/* A set's songs that follow its LSDj: after the next successful install (install-ui.js 'firmware-installed') they
-   are sent by themselves, once the restarted FM-1 answers and reports that set's LSDj. The user agreed to replace
-   the FM-1's songs when starting (sets-ui.js). Anything else installed: nothing is sent. */
+/* A made cartridge's songs that follow its LSDj: after the next successful install (install-ui.js
+   'firmware-installed') they are sent by themselves, once the restarted FM-1 answers and reports that LSDj. The user
+   agreed to replace the FM-1's songs when starting (studio-ui.js, Install on the FM-1…). Anything else installed:
+   nothing is sent. */
 let pending = null;
 export function sendAfterInstall(bytes, from, needs) {
   openSave(bytes, from, needs);
@@ -276,13 +299,13 @@ async function sendPending() {
   for (let n = 0; n < 20 && !info; n++) {
     try { info = await hooks.cartInfo(); } catch (e) { why = e.message; await wait(1500); }
   }
-  if (!info) return say(`Couldn't reach the FM-1 after the install (${why}). Press "2. Send ${needs.title}'s songs" when it's connected.`, 'warn');
+  if (!info) return say(`Couldn't reach the FM-1 after the install (${why}). Press Send to the FM-1 here (it has ${needs.title}'s songs open) when it's connected.`, 'warn');
   if (info.dataCrc !== want) return say(`The FM-1 now has a different LSDj, not ${needs.title}'s (kits unticked in Install, or another file), so its songs were not sent.`, 'warn');
   let done = false;
   for (let n = 0; n < 5 && !done; n++) {
     try { await withProgress(pr => hooks.sendSave(bytes, pr)); done = true; } catch (e) { why = e.message; await wait(1500); }
   }
-  say(done ? `Done: ${needs.title}'s LSDj and songs are on the FM-1.` : `Installed, but sending the songs failed (${why}). Press "2. Send ${needs.title}'s songs" to try again.`, done ? 'ok' : 'bad');
+  say(done ? `Done: ${needs.title}'s LSDj and songs are on the FM-1.` : `Installed, but sending the songs failed (${why}). Press Send to the FM-1 here (it has ${needs.title}'s songs open) to try again.`, done ? 'ok' : 'bad');
 }
 /* chosen: picked here (a file or the FM-1's), which a ROM chosen later in Install doesn't replace */
 /* songs read from the FM-1: kit names from the cartridge it has, when it's kept here and none was chosen */
@@ -333,19 +356,34 @@ export function useRom(rom, from, chosen = true) {
   state.rom = rom ?? null; state.slots = rom ? kitSlots(rom) : null; state.romFrom = from; state.romChosen = chosen;
   announce();
 }
+/* .lsdsng songs into the open save, in order, until it is full (32 songs or its 191 blocks); the ones after that are
+   kept aside (state.full) and offered to Studio › Build, which takes them all */
 export async function addLsdsng(files) {
-  const added = [];
+  const added = [], left = [];
   for (const f of files) {
     const s = readLsdsng(new Uint8Array(await f.arrayBuffer()));
-    if (state.items.length >= SLOTS) throw new SavError(`A save holds ${SLOTS} songs; ${f.name} and the rest were not added.`);
-    const item = {slot: null, name: s.name, nameBytes: s.nameBytes, version: s.version, song: s.song};
+    if (left.length || state.items.length >= SLOTS) { left.push({file: f, name: s.name}); continue; }
     const before = state.items;
-    state.items = [...before, item];
-    try { rebuild(); } catch (e) { state.items = before; throw e; }
+    state.items = [...before, {slot: null, name: s.name, nameBytes: s.nameBytes, version: s.version, song: s.song}];
+    try { rebuild(); } catch (e) {
+      state.items = before;
+      if (!(e instanceof SavError)) throw e;
+      left.push({file: f, name: s.name}); continue;
+    }
     added.push(s.name);
   }
+  state.full = left.length ? {files: [...(state.full?.files ?? []), ...left.map(x => x.file)], names: [...(state.full?.names ?? []), ...left.map(x => x.name)]} : state.full;
   draw(); announce();
-  say(`Added ${added.join(', ')}.`, 'ok');
+  if (left.length) say(`${added.length ? `Added ${added.join(', ')}. ` : ''}The save is full: ${left.length === 1 ? 'one song' : `${left.length} songs`} didn't go in. Build can take them all.`, 'warn');
+  else say(`Added ${added.join(', ')}.`, 'ok');
+}
+/* an LSDj chosen here, kept with the cartridges (Studio › Build and Install use them); never one made by the cart
+   makers (their LSDj holds only some kits: cart-built, studio-ui.js) */
+export async function rememberRom(rom, name, from = 'file') {
+  let made = [];
+  try { made = JSON.parse(localStorage.getItem('cart-built') || '[]') || []; } catch { /* none kept */ }
+  if (made.includes(await hashOf(rom))) return;
+  await addCartridge(rom, name, {from});
 }
 
 async function guard(fn) { try { await fn(); } catch (e) { say(e.message, 'bad'); } }
@@ -422,12 +460,12 @@ export function mountSongsUi(root) {
     el('div', {id: 'st-report'}),
     el('p', {id: 'st-storage', className: 'warn', hidden: true}),
     el('details', {id: 'st-backups'}, el('summary', {textContent: 'Song backups'}), el('div', {id: 'st-backup-list'})),
-    el('div', {id: 'st-sets', className: 'sets'}));
+    el('p', {className: 'st-tobuild'}, el('span', {className: 'hint', textContent: 'Making cartridges from several saves and songs, with every sample they play, is in one place: '}),
+      el('a', {href: '#studio', textContent: 'Studio › Build'}), '.'));
   drawSongsDevices([], '');
   void drawBackups(); void drawStorage();
   document.addEventListener('kit-library', () => void drawBackups());
   document.addEventListener('kit-library-trouble', () => void drawStorage());
-  mountSetsUi($('st-sets'));
   document.addEventListener('firmware-installed', () => guard(sendPending));
   document.addEventListener('songs-this-cart', e => guard(async () => {
     const c = (await cartridges()).find(x => x.id === e.detail.id);

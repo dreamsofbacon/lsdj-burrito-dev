@@ -221,7 +221,7 @@ $('rom').onchange = e => {
   if (busy || installing() || reading) return;
   return chooseRom(e.target.files[0]);
 };
-/* Songs & kits › a song set (sets-ui.js): its LSDj, as if chosen here (all its kits ticked) */
+/* Studio › Build › a made cartridge's Install on the FM-1… (studio-ui.js): its LSDj, as if chosen here (all its kits ticked) */
 document.addEventListener('install-this-rom', e => {
   if (busy || installing() || reading) return;
   $('rom').value = '';
@@ -254,7 +254,7 @@ window.addEventListener('hashchange', () => void reopen());
   void mountStudio($('studio'));
   void reopen();
 }
-/* Songs & kits › Your LSDj files and kits › Load (sets-ui.js): a saved .kit into the first empty kit slot of the
+/* Cartridges › .kit files › Put in Install's LSDj (carts-ui.js): a saved .kit into the first empty kit slot of the
    LSDj chosen here (a new copy, as Add a .kit does) */
 document.addEventListener('install-this-kit', e => {
   location.hash = '#install';

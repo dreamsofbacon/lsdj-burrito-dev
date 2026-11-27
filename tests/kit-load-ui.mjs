@@ -1,4 +1,4 @@
-// Songs & kits › Your LSDj files and kits › Load: a saved .kit goes into an empty kit slot of Install's LSDj.
+// Cartridges › .kit files › Put in Install's LSDj: a saved .kit goes into an empty kit slot of Install's LSDj.
 // Run on a fresh local preview page; synthetic files only, nothing goes to a device.
 import {BANK} from '../lsdj/lsdj-rom.js';
 import {kitSlots, parseKit} from '../lsdj/lsdj-kit.js';
@@ -32,7 +32,7 @@ async function chooseRom(bytes, name) {
   $('rom').files = t.files;
   await $('rom').onchange({target: $('rom')});
 }
-const loadButton = name => [...document.querySelectorAll('#songtools .sets-lib li')].find(li => li.textContent.startsWith(name))
+const loadButton = name => [...document.querySelectorAll('#carts .sets-lib li')].find(li => li.textContent.startsWith(name))
   ?.querySelector('button');
 
 export async function runKitLoadUiTests() {
@@ -45,7 +45,7 @@ export async function runKitLoadUiTests() {
   await addToLibrary('kit', 'mykit.kit', kit);
   await until(() => loadButton('mykit.kit'), 'the saved kit listed');
   const load = loadButton('mykit.kit');
-  assert(load.textContent === 'Load', `the first button is Load: ${load.textContent}`);
+  assert(load.textContent === "Put in Install's LSDj", `the first button puts it in Install: ${load.textContent}`);
 
   /* no LSDj in Install yet */
   load.click();
@@ -73,5 +73,5 @@ export async function runKitLoadUiTests() {
     assert(/No empty kit slot/.test($('rom-info').textContent), `full: ${$('rom-info').textContent}`);
   }
   await clearLibrary();
-  return 'PASS kit Load: no LSDj -> asks for one; into the first empty slot, listed and ticked; a full LSDj -> says so';
+  return 'PASS kit Put in Install\'s LSDj (Cartridges): no LSDj -> asks for one; into the first empty slot, listed and ticked; a full LSDj -> says so';
 }

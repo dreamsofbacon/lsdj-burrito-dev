@@ -271,6 +271,15 @@ export function planSplit(resolved, ctx) {
   return sets.map(s => s.over ? {...planMost(s.entries, ctx), over: true} : {...s, lost: [], leftOut: []});
 }
 
+/* How many of the songs, in their order, fit one set with every sample they play (0: the first doesn't fit even
+   alone). The Studio's "Start a new card" moves the songs after them into a card of their own. */
+export function fitCount(resolved, ctx) {
+  const all = withBlocks(resolved);
+  let n = 0;
+  while (n < all.length && fitsIn(measure(all.slice(0, n + 1), ctx), ctx)) n++;
+  return n;
+}
+
 /* One set: the songs that fit the .sav (in order), and the kits most songs play until the LSDj is full.
    -> {entries, kits, bytes, blocks, lost: [{song, kit, name, samples}], leftOut: [entries]} */
 export function planMost(resolved, ctx) {

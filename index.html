@@ -7,7 +7,7 @@
 <title>Dreamy_bacon's LSDJ Burrito</title>
 <!-- every module the page imports at start, fetched at once instead of one import level at a time (tests/preload.mjs) -->
 <link rel="modulepreload" href="lsdj/lsdj-rom.js"><link rel="modulepreload" href="lsdj/lsdj-firmware.js"><link rel="modulepreload" href="lsdj/kits-ui.js"><link rel="modulepreload" href="lsdj/songs-ui.js"><link rel="modulepreload" href="lsdj/lsdj-kit.js"><link rel="modulepreload" href="lsdj/lsdj-usage.js"><link rel="modulepreload" href="lsdj/gamepad.js"><link rel="modulepreload" href="lsdj/link.js"><link rel="modulepreload" href="lsdj/save-file.js"><link rel="modulepreload" href="lsdj/page-theme.js"><link rel="modulepreload" href="lsdj/crate-ui.js"><link rel="modulepreload" href="lsdj/conn-log.js"><link rel="modulepreload" href="lsdj/fm1-numbers.js"><link rel="modulepreload" href="lsdj/backups.js"><link rel="modulepreload" href="lsdj/cartridges.js"><link rel="modulepreload" href="lsdj/carts-ui.js"><link rel="modulepreload" href="lsdj/choose-lsdj.js"><link rel="modulepreload" href="lsdj/choose-fm1.js"><link rel="modulepreload" href="lsdj/fx-model.js"><link rel="modulepreload" href="lsdj/fx-diagram.js">
-<link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/sets-ui.js"><link rel="modulepreload" href="lsdj/crate.js">
+<link rel="modulepreload" href="lsdj/zip.js"><link rel="modulepreload" href="lsdj/midiclock.js"><link rel="modulepreload" href="lsdj/dj-ui.js"><link rel="modulepreload" href="lsdj/usb-audio.js"><link rel="modulepreload" href="lsdj/screen.js"><link rel="modulepreload" href="lsdj/popout.js"><link rel="modulepreload" href="lsdj/install.js"><link rel="modulepreload" href="lsdj/swap.js"><link rel="modulepreload" href="emulator/core.js"><link rel="modulepreload" href="emulator/panel.js"><link rel="modulepreload" href="emulator/face.js"><link rel="modulepreload" href="emulator/save-flash.js"><link rel="modulepreload" href="vendor/fm1pkg.js"><link rel="modulepreload" href="lsdj/lsdj-sav.js"><link rel="modulepreload" href="lsdj/crate.js">
 <link rel="modulepreload" href="lsdj/kit-library.js"><link rel="modulepreload" href="lsdj/dj.js"><link rel="modulepreload" href="lsdj/dj-info.js"><link rel="modulepreload" href="lsdj/mixers.js"><link rel="modulepreload" href="lsdj/dj-tempo.js"><link rel="modulepreload" href="lsdj/dj-fx.js"><link rel="modulepreload" href="lsdj/song-key.js"><link rel="modulepreload" href="vendor/fm1ota.js"><link rel="modulepreload" href="lsdj/lsdj-sets.js"><link rel="modulepreload" href="lsdj/cart-maker.js"><link rel="modulepreload" href="lsdj/cart-label.js"><link rel="modulepreload" href="lsdj/studio-ui.js"><link rel="modulepreload" href="lsdj/presets-ui.js"><link rel="modulepreload" href="lsdj/presets.js">
 <script>/* the dev page (dreamsofbacon.github.io/lsdj-burrito-dev/, the site's dev branch): a banner, DEV in the
    title and its own app name; the same code is harmless on the live page */
@@ -316,38 +316,110 @@ body.popped .dj-fx{padding:14px 18px;overflow:auto;scrollbar-width:thin}
 .studio-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .studio-tabs a{padding:6px 14px;border-radius:999px;border:1px solid var(--line);text-decoration:none;color:var(--ink)}
 .studio-tabs a.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-/* the cartridge studio (lsdj/studio-ui.js): drop zone, the LSDj shelf, loose songs on the left, cartridges on the right */
+/* the cartridge studio (lsdj/studio-ui.js): what to bring (no songs yet), then the three steps; the songs grouped by
+   the file they came from on the left, the cartridge cards in a grid on the right */
+body.studio-wide main,body.studio-wide .top-in{max-width:1320px}
 #studio.drop{outline:3px dashed var(--accent);outline-offset:4px}
 #studio.busy .studio-grid{opacity:.6;pointer-events:none}
-.studio-drop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0;padding:14px;border:2px dashed var(--line);border-radius:12px}
-#studio.empty .studio-drop{padding:36px 14px;justify-content:center;font-size:1.1em}
-.studio-shelf{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;padding:0}
-.studio-tile{display:flex;flex-direction:column;align-items:center;min-width:76px;padding:6px 10px;border-radius:6px 3px 6px 6px;background:#c9c6bd;color:#2a2925;border:1px solid #0003}
-.studio-tile .hint,.studio-tile .ok{color:inherit;font-size:.75em}
-.studio-tile.base{outline:2px solid var(--accent)}
-.studio-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
-.studio-pool.over{outline:2px dashed var(--accent);outline-offset:4px}
-.studio-songs{list-style:none;margin:6px 0;padding:0;display:grid;gap:4px}
-.studio-song{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:grab}
-.studio-song.missing{border-color:var(--bad,#c0453a)}
-.studio-song.dragging{opacity:.45}
-.studio-song.over{box-shadow:0 -3px 0 var(--accent)}
+.studio-drop{display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0;padding:32px 16px;border:2px dashed var(--accent);border-radius:14px;text-align:center;background:var(--card2)}
+.studio-drop>b{font-size:1.1em}
+.studio-how{list-style:none;counter-reset:how;margin:12px 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.studio-how li{counter-increment:how;display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:10px}
+.studio-how li>b::before{content:counter(how);display:inline-grid;place-items:center;width:22px;height:22px;margin-right:8px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:12px}
+.studio-steps{list-style:none;margin:6px 0 10px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.studio-step{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}
+.studio-step.now{border-color:var(--accent)}
+.studio-step-head{display:flex;align-items:center;gap:8px}
+.studio-step-n{display:inline-grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700}
+.studio-step.done .studio-step-n{background:var(--ok);color:var(--bg)}
+.studio-vers{display:flex;flex-wrap:wrap;gap:6px}
+.studio-ver{font-size:12px;padding:3px 10px;border-radius:999px}
+.studio-ver.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);font-weight:600}
+.studio-link{background:none;border:0;padding:2px 4px;text-decoration:underline;color:var(--accent);cursor:pointer}
+.studio-grid{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.studio-grid[hidden]{display:none}
+.studio-pool{flex:1 1 380px;min-width:0;display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px}
+.studio-pool.over{outline:2px dashed var(--accent);outline-offset:2px}
+.studio-pool .cm-search{width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:6px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card2);color:var(--ink)}
+.studio-carts{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.studio-panel-head{display:flex;justify-content:space-between;align-items:baseline}
+.studio-panel-head h3,.studio-carts-head h3{margin:0}
+.studio-filters{display:flex;flex-wrap:wrap;gap:6px}
+.studio-filter{font-size:12px;padding:3px 10px;border-radius:999px}
+.studio-filter.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.studio-filter.missing:not(.on){color:var(--bad)}.studio-filter.check:not(.on){color:var(--warn)}
+.studio-selbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--card));font-size:13px}
+.studio-selbar select,.studio-selbar button{width:auto;font-size:13px;padding:3px 8px}
+.studio-groups{display:flex;flex-direction:column;gap:6px}
+.studio-group{margin:0;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.studio-group-head{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--card2)}
+.studio-group-name{cursor:pointer;overflow-wrap:anywhere}
+.studio-group-where{margin-left:auto;font-size:12px;text-align:right}
+.studio-fold{background:none;border:0;padding:0 4px;color:var(--muted);cursor:pointer}
+.studio-songs{list-style:none;margin:0;padding:0}
+.studio-song{padding:4px 8px;border-top:1px solid var(--line);font-size:13px;cursor:grab}
+.studio-song.sel{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.studio-song.dragging,.studio-slotsong.dragging{opacity:.45}
 .studio-song-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.studio-grip{color:var(--muted);cursor:grab}
-.studio-from{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.studio-slot{font-size:.75em;color:var(--muted)}
-.studio-song button{min-height:0;padding:1px 7px}
-.studio-link{background:none;border:0;text-decoration:underline;color:var(--accent);cursor:pointer}
-.studio-kits-line{font-size:.85em}
-.studio-kits{margin-top:4px;display:grid;gap:3px}
-.studio-cart{margin:8px 0;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--card) 85%,#000)}
-.studio-cart.over{outline:2px dashed var(--accent)}
-.studio-empty{padding:14px;text-align:center;border:1px dashed var(--line);border-radius:8px}
-.studio-grid>*,.studio-cart,.studio-songs>li{min-width:0}
-.studio-song select{width:auto;max-width:9em;min-height:0;padding:2px 6px;font-size:.85em}
-.studio-song .cm-kitpick{max-width:100%}
-.studio-song-name{overflow-wrap:anywhere}
-@media (max-width:800px){.studio-grid{grid-template-columns:1fr}}
+.studio-grip{color:var(--muted)}
+.studio-song-name{min-width:6.5em;overflow-wrap:anywhere}
+.studio-kittags{display:inline-flex;flex-wrap:wrap;gap:3px}
+.studio-kit{display:inline-block;padding:2px 4px;border-radius:4px;font:600 11px/1 var(--font-data);color:#161615;background:#c8c2b4}
+.studio-kit.missing{background:none;color:var(--bad);box-shadow:inset 0 0 0 1px var(--bad)}
+.studio-kit.silent{background:none;color:var(--muted);box-shadow:inset 0 0 0 1px var(--line);text-decoration:line-through}
+.studio-note{background:none;border:0;padding:0 2px;font-size:12px;text-decoration:underline;cursor:pointer}
+.studio-where{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap}
+.studio-where.loose{font-style:italic}
+.cm-label.studio-dot{width:9px;height:9px;border-radius:2px;box-shadow:none}
+.studio-move{width:2.4em;flex:none;padding:0 2px;font-size:14px;line-height:1.2;text-align:center;appearance:none;-webkit-appearance:none;border-color:transparent;background:none;color:var(--muted);cursor:pointer}
+.studio-move:hover{border-color:var(--line)}
+.studio-kits{margin:6px 0 4px 22px;display:grid;gap:4px;font-size:13px}
+.studio-kits select{padding:2px 6px;font-size:12px;max-width:100%}
+.studio-carts-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.studio-modes{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.studio-mode{border:0;border-radius:0;padding:5px 12px;font-size:13px}
+.studio-mode.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.studio-carts-acts{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px}
+.studio-carts-acts button{font-size:13px;padding:5px 10px}
+.studio-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.studio-cart{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.studio-cart.many{border-color:var(--accent)}
+.studio-cart.unfit{border-color:var(--warn)}
+.studio-cart.over{outline:2px dashed var(--accent);outline-offset:2px}
+.studio-cart .cart-label-edit{background:var(--card2);color:inherit}
+.studio-cart-head{display:flex;align-items:center;gap:6px}
+.studio-cart-head .cm-cartname{flex:1;min-width:0;font:15px var(--font-name);letter-spacing:.03em;background:none;color:var(--ink);border:1px solid transparent;border-radius:6px;padding:4px 6px}
+.studio-cart-head .cm-cartname:hover,.studio-cart-head .cm-cartname:focus{border-color:var(--line)}
+.studio-swatch{width:28px;height:22px;padding:0;border:0;cursor:pointer}
+.studio-many{font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap}
+.studio-lsdj{width:auto;max-width:9.5em;padding:2px 6px;font-size:12px;border-radius:999px}
+.studio-x{padding:2px 8px;font-size:12px}
+.studio-meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-size:12px;color:var(--muted)}
+.studio-meters b{color:var(--ink)}
+.studio-bar{display:block;height:4px;margin-top:3px;border-radius:2px;background:var(--line);overflow:hidden}
+.studio-bar i{display:block;height:100%;background:var(--accent)}
+.studio-meter.over .studio-bar i{background:var(--bad)}
+.studio-small{margin:0;font-size:12px}
+.studio-parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.studio-parts li{display:grid;grid-template-columns:minmax(0,1.4fr) auto auto minmax(40px,1fr) auto;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px}
+.studio-parts .studio-bar{margin:0}
+.studio-part-name{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.studio-slots{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px;font-size:13px}
+.studio-slotsong{display:flex;align-items:center;gap:6px;min-width:0;padding:1px 4px;border-radius:5px;cursor:grab}
+.studio-slotsong b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-slotsong.missing b{color:var(--bad)}
+.studio-slotsong.over{box-shadow:0 -2px 0 var(--accent)}
+.studio-n{color:var(--muted);font:12px var(--font-data)}
+.studio-arrow{margin-left:auto;padding:0 5px;font-size:11px}
+.studio-arrow+.studio-arrow{margin-left:0}
+.studio-empty{margin:0;padding:12px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+.studio-cart-foot{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.studio-cart-foot button{font-size:13px;padding:5px 10px}
+.studio-made p{margin:0 0 4px;font-size:12px}
+.studio-made-name{font-size:12px}
+.studio-ask{margin-top:6px;padding:8px 10px;border:1px solid var(--accent);border-radius:9px;font-size:13px}
+.studio-ask p{margin:0 0 6px}
+@media (max-width:600px){.studio-group-where{display:none}.studio-carts-acts{margin-left:0}}
 /* the cart maker (lsdj/cart-maker.js): a panel over the DJ layout, songs on the left, the carts on the right */
 .cart-maker{position:fixed;inset:3vh 3vw;z-index:60;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:14px;color:var(--ink);
   background:var(--card);border:1px solid var(--line);box-shadow:0 20px 60px #000c}
@@ -1216,9 +1288,10 @@ canvas{border:1px solid var(--line);border-radius:6px;image-rendering:pixelated;
 .st-table th,.st-table td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
 .st-actions{white-space:nowrap}
 #songtools .row{margin:6px 0;flex-wrap:wrap}
-.sets{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
-.sets select{max-width:100%}
 .sets-lib{margin:4px 0 8px;padding-left:20px}
+.st-full{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 10%,var(--card))}
+.st-full p{margin:0}
+.st-tobuild{margin-top:20px;padding-top:10px;border-top:1px solid var(--line)}
 .cart-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px}
 .cart-card{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
 .cart-card.on{border-color:var(--accent,currentColor)}
@@ -1232,14 +1305,8 @@ canvas{border:1px solid var(--line);border-radius:6px;image-rendering:pixelated;
 .fm1-row{align-items:center}
 .fm1-no{font-size:2.4em;font-weight:800;line-height:1;min-width:1.3em;text-align:center;font-variant-numeric:tabular-nums}
 .fm1-note{display:block;font-size:.9em}
-.sets-plan{display:block;margin:4px 0}
-.sets-card{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}
-.sets-card h4{margin:2px 0 6px}
 .smp{white-space:nowrap}
 button.play{padding:0 5px;margin-right:3px;font-size:11px;line-height:1.5;min-width:0}
-.sets-listen summary{cursor:pointer;display:inline}
-.sets-listen[open]{display:block;margin:4px 0 6px}
-.sets-listen div{margin:2px 0}
 .kit-editor{max-width:min(720px,calc(100vw - 32px));border:1px solid var(--line);border-radius:12px;background:var(--bg);color:inherit}
 .kit-editor::backdrop{background:rgba(0,0,0,.5)}
 .kit-sample{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line)}

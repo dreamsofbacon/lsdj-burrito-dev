@@ -17,7 +17,7 @@ const FILES = [
   'lsdj/lsdj-app.js', 'lsdj/lsdj-firmware.js', 'lsdj/lsdj-rom.js', 'lsdj/midiclock.js', 'lsdj/dj.js', 'lsdj/dj-info.js', 'lsdj/dj-ui.js', 'lsdj/usb-audio.js', 'lsdj/song-key.js', 'lsdj/dj-fx.js', 'lsdj/dj-tempo.js', 'lsdj/mixers.js', 'lsdj/crate.js', 'lsdj/crate-ui.js', 'lsdj/cart-maker.js', 'lsdj/cart-label.js', 'lsdj/studio-ui.js', 'lsdj/cart-core.js', 'lsdj/cart-worker.js', 'lsdj/conn-log.js', 'lsdj/fm1-numbers.js', 'lsdj/backups.js', 'lsdj/cartridges.js', 'lsdj/carts-ui.js', 'lsdj/choose-lsdj.js', 'lsdj/choose-fm1.js', 'lsdj/page-theme.js', 'lsdj/popout.js', 'lsdj/pwa.js',
   'lsdj/save-file.js', 'lsdj/screen.js', 'lsdj/ui.js', 'lsdj/zip.js', 'lsdj/presets.js', 'lsdj/presets-ui.js', 'lsdj/swap.js',
   'lsdj/lsdj-sav.js', 'lsdj/lsdj-kit.js', 'lsdj/lsdj-usage.js', 'lsdj/songs-ui.js', 'lsdj/kits-ui.js', 'lsdj/wav-kit.js',
-  'lsdj/lsdj-sets.js', 'lsdj/kit-library.js', 'lsdj/sets-ui.js',
+  'lsdj/lsdj-sets.js', 'lsdj/kit-library.js',
   'lsdj/template.json', 'lsdj/versions.json', 'lsdj/fm1-lsdj-template.fwsc',
   'vendor/fm1ota.js', 'vendor/fm1pkg.js',
   'emulator/app.js', 'emulator/core.js', 'emulator/panel.js', 'emulator/face.js', 'emulator/save-flash.js', 'emulator/upstream.json',
