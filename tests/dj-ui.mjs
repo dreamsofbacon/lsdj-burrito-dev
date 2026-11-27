@@ -300,6 +300,38 @@ export async function runDjUiTests() {
       choose(startOn, 'bar');
     }
 
+    // 3e. Colin's video (2026-11-27): B's LSDj plays on its own clock (LIVE mode), its bars 30 clocks off the master's;
+    //     A (Sync on, Next chain, counted on B) starts on B's bar, and the master starts again with it: Sync has
+    //     nothing to pull (it slowed the deck 8 % for seconds, onto the master's old bars, and "in sync" was off the other)
+    {
+      const deckA = djState().decks[0], deckB = djState().decks[1], els = () => [...document.querySelectorAll('.dj-deck')];
+      const startOnA = document.querySelector('select[aria-label="Deck A Play starts"]'), fromA = document.querySelector('select[aria-label="Deck A count the start on"]');
+      const was = {startOn: startOnA.value, from: fromA.value, synced: deckA.synced, playing: B.playing, bpm: B.lsdjBpm};
+      for (const [i, d] of [[0, deckA], [1, deckB]]) if (d.clock?.running || d.startTimer) { play(i); await until(() => !d.clock?.running && !d.startTimer, `deck ${i} stopped`, 2000); }
+      const bpm = djState().master.bpm, perMs = bpm * 24 / 60000, t0 = performance.now() - (djState().master.clock.phase() + 30) / perMs;
+      const bPhase = t => (t - t0) * perMs;   /* B's LSDj: 30 clocks past the master's bars, at its tempo */
+      B.lsdjBpm = bpm; B.chain = {phase: () => bPhase(performance.now()), len: 1}; B.playing = 15;
+      await until(() => deckB.ownRow != null, 'B on its own clock: the page follows its row', 4000);
+      choose(startOnA, 'chain'); choose(fromA, 'deck');
+      if (!deckA.synced) els()[0].querySelector('.dj-sync').click();
+      A.midi.length = 0;
+      play(0);
+      await until(() => A.midi.some(m => m[0] === 0xfa), "A started on B's chain", 15000);
+      const at = A.midi.find(m => m[0] === 0xfa).ts, onB = bPhase(at) % 96, offB = Math.min(onB, 96 - onB);
+      assert(offB < 6, `A's Start on B's bar (B's own clock): ${offB.toFixed(2)} clocks off`);
+      await sleep(1200);
+      const gap = offset(deckA.clock.phase(), djState().master.clock.phase());
+      assert(Math.abs(gap) < 0.75 && !deckA.bendTimer && (deckA.clock.factor || 1) === 1, `Sync leaves A on B's bar (the master started with it): gap ${gap?.toFixed(2)} clocks, bend ${deckA.clock.factor}`);
+      /* back as before: B on this page's clock, A as it was */
+      play(0); await until(() => !deckA.clock?.running, 'A stopped', 2000);
+      B.chain = null; B.playing = was.playing; B.lsdjBpm = was.bpm;
+      if (deckA.synced !== was.synced) els()[0].querySelector('.dj-sync').click();
+      choose(startOnA, was.startOn); choose(fromA, was.from);
+      for (let i = 0; i < 4; i++) { deckB.seenPlaying = false; await sleep(400); }
+      play(1); await until(() => deckB.clock?.running, 'B playing again', 15000);
+      play(0); await until(() => deckA.clock?.running, 'A playing again', 15000);
+    }
+
     // 4. a stem kill (NOI on A, now) and the DJ filter (A to low-pass): sent to A only
     const killNoi = [...document.querySelectorAll('.dj-deck')][0].querySelectorAll('.dj-kill')[3];
     killNoi.click();

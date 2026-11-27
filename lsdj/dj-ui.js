@@ -374,7 +374,16 @@ function armStart(d) {
   }
   d.startAt = at;
   if (at - t > ARM_MS) d.startTimer = later(at - t - ARM_MS, () => armStart(d));
-  else { c.setTempo(d.bpm); c.start(at); uncue(d); d.chainAt = null; }
+  else {
+    c.setTempo(d.bpm); c.start(at); uncue(d); d.chainAt = null;
+    /* counted on a deck whose LSDj plays on its own clock, with no deck on this page's clock: the master starts
+       again with this deck, so its bars are the ones this deck landed on (that deck's). Before, Sync then pulled the
+       deck onto the master's old bars, which that deck's were not on: 8 % slow for seconds, and "in sync" a few rows
+       off what was heard (Colin's video, 2026-11-27) */
+    if (r?.barOnly && master.source === 'page' && !decks.some(o => o !== d && (o.clock?.running || o.startTimer))) {
+      const m = masterClock(); if (m.running) m.stop(); m.start(at);
+    }
+  }
   drawPlay(d);
   void djKeys(d);   /* its FM-1's OP4 blinks until the start, then plays */
   clearTimeout(d.djTimer); d.djTimer = setTimeout(() => void djKeys(d), Math.max(0, at - now()) + 10);
