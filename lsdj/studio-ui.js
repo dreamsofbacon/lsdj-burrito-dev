@@ -3,6 +3,8 @@
 // Drop in your LSDj versions and your songs (any number of .sav, .lsdsng, .lsdprj, .kit and .gb files, or folders):
 // the songs are sorted into cartridges (songs that share kits together, every sample kept), then arranged by hand:
 // drag songs (or several ticked ones) between cards, point a song's kits somewhere else, name and label the cards.
+// A song also in another file (the same song, or another version of it) is asked about once it comes in: which
+// copies to keep, each with its file's date and its version. The list goes by file, A to Z, or the newest file first.
 // When a card holds more than one cartridge can (32 songs, the .sav's 191 blocks, the FM-1's room, the LSDj's kit
 // slots) it either makes several cartridges ("It makes more cartridges": FRIDAY 1, FRIDAY 2…) or the songs past what
 // fits move into a new card ("Start a new card"). Made cartridges go to the DJ crate, to Install (their songs sent
@@ -26,6 +28,7 @@ const two = n => String(n).padStart(2, '0');
 const WANTED = /\.(sav|lsdsng|lsdprj|gbc?|kit)$/i, DRAG = 'application/x-studio-song';
 const BUILT = 'cart-built';   /* the ids of LSDj files made here: never a source for matching songs (songs-ui.js reads it too) */
 const MODE = 'studio-full';   /* what a full card does, this viewer's choice: 'split' | 'new' */
+const BY = 'studio-by';   /* the song list: by file, by name (A to Z) or the newest file first, this viewer's choice */
 const SLOTS = 32, BLOCKS = 191, SHOWN = 8, ROWS_MAX = 400;
 const store = {get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* this visit */ } }};
 
@@ -33,7 +36,9 @@ let root = null, capacity = 502016, viewSeq = 0, listening = false, ready = null
 const files = {pick: null, folder: null, rom: null};
 const ui = {carts: [], nextCart: 1, choices: {madeWith: {}, kitPick: {}}, baseId: null, query: '', filter: 'all', view: null, made: {}, busy: '',
   sel: new Set(), anchor: null, groupOpen: new Map(), kitsOpen: null, labelOpen: null, showAll: new Set(), ask: null, drag: null,
-  mode: store.get(MODE, 'split') === 'new' ? 'new' : 'split'};
+  mode: store.get(MODE, 'split') === 'new' ? 'new' : 'split',
+  by: ['file', 'name', 'newest'].includes(store.get(BY, '')) ? store.get(BY, '') : 'file',   /* how the song list is grouped */
+  dups: null};   /* songs in more than one file, being asked about: {groups, keep: Set of ids, sortIds: fresh songs to sort after} */
 
 /* text: a string, or a list of strings and elements (a link) */
 const say = (text, cls = 'hint') => { const s = root?.querySelector('.studio-status'); if (s) { s.replaceChildren(...[].concat(text)); s.className = `${cls} studio-status`; } };
@@ -95,33 +100,77 @@ async function entriesOf(items) {
   return out;
 }
 async function sendLibrary() {
-  const list = (await libraryFiles()).filter(f => f.kind === 'rom' || f.kind === 'kit').map(f => ({id: f.id, kind: f.kind, name: f.name, bytes: f.bytes}));
+  const list = (await libraryFiles()).filter(f => f.kind === 'rom' || f.kind === 'kit').map(f => ({id: f.id, kind: f.kind, name: f.name, bytes: f.bytes, date: f.date ?? null}));
   await call('library', {files: list, built: built()});
 }
 /* files in: read in the worker, LSDj and .kit files kept for next time; new songs sorted into cards when nothing is
-   arranged yet (or sort: always, as for songs Songs & kits hands over) */
+   arranged yet (or sort: always, as for songs Songs & kits hands over). New songs that are also in another file are
+   asked about first (askDups): which copies to keep, then the sorting. */
 async function addFiles(list, {sort = false} = {}) {
   list = [...list].filter(f => WANTED.test(f.name));
   if (!list.length) return say('No songs, projects, saves, LSDj files or kits there.', 'warn');
   const before = new Set((ui.view?.songs ?? []).map(s => s.id));
   ui.busy = `Reading ${plural(list.length, 'file')}…`; draw();
   const read = [];
-  for (const f of list) read.push({name: f.name, bytes: new Uint8Array(await f.arrayBuffer())});
+  for (const f of list) read.push({name: f.name, bytes: new Uint8Array(await f.arrayBuffer()), date: f.lastModified || null});
   const out = await call('add', {files: read}, read.map(f => f.bytes.buffer));
-  for (const r of out.roms) await addToLibrary('rom', r.name, r.bytes);   /* kept for next time: drop them once */
-  for (const k of out.kits) await addToLibrary('kit', k.name, k.bytes);
+  for (const r of out.roms) await addToLibrary('rom', r.name, r.bytes, r.date ? {date: r.date} : {});   /* kept for next time: drop them once */
+  for (const k of out.kits) await addToLibrary('kit', k.name, k.bytes, k.date ? {date: k.date} : {});
   if (out.roms.length || out.kits.length) await sendLibrary();
   ui.busy = ''; ui.made = {};
   await refresh();
   const fresh = (ui.view?.songs ?? []).filter(s => !before.has(s.id)).map(s => s.id);
+  const sortNow = fresh.length && (sort || !ui.carts.length) && ui.view.roms.length;
+  const groups = fresh.length ? await call('dups', {ids: fresh}) : [];
   let sorted = 0;
-  if (fresh.length && (sort || !ui.carts.length) && ui.view.roms.length) sorted = await sortLoose(fresh);
+  if (groups.length) askDups(groups, sortNow ? fresh : ui.dups?.sortIds ?? null);
+  else if (sortNow) sorted = await sortLoose(fresh);
   say(`Added ${plural(out.songs, 'song')}` + (out.roms.length ? `, ${plural(out.roms.length, 'LSDj')}` : '') + (out.kits.length ? `, ${plural(out.kits.length, 'kit')}` : '') +
+    (groups.length ? `; ${plural(groups.length, 'song')} ${groups.length === 1 ? 'is' : 'are'} in more than one file: tick the copies to keep${sortNow ? ', then they are sorted into cartridges' : ''}` : '') +
     (sorted ? `; sorted into ${plural(sorted, 'cartridge')}: drag songs between them to change that` : '') +
     (fresh.length && !ui.view.roms.length ? '; now add the LSDj versions they were made with (.gb)' : '') +
-    (fresh.length && !sorted && ui.view.roms.length ? `; ${plural(fresh.length, 'song')} not in a cartridge yet` : '') +
+    (fresh.length && !sorted && !groups.length && ui.view.roms.length ? `; ${plural(fresh.length, 'song')} not in a cartridge yet` : '') +
     (out.skipped.length ? `. Skipped ${plural(out.skipped.length, 'file')}: ${out.skipped.slice(0, 4).map(s => `${s.name} (${s.why})`).join('; ')}${out.skipped.length > 4 ? '…' : ''}` : '') + '.',
     out.skipped.length ? 'warn' : 'ok');
+}
+
+/* ---- songs in more than one file: which copies to keep (the others leave Build; the files are not changed) ---- */
+const keepNewest = groups => new Set(groups.map(g => g.songs[0].id));
+function askDups(groups, sortIds = null) {
+  /* (asked again while asking: the groups already shown keep their ticks) */
+  const was = ui.dups, ids = new Set(groups.flatMap(g => g.songs.map(s => s.id)));
+  const old = was ? was.groups.filter(g => !g.songs.some(s => ids.has(s.id))) : [];
+  const keep = keepNewest(groups);
+  for (const g of old) for (const s of g.songs) if (was.keep.has(s.id)) keep.add(s.id);
+  ui.dups = {groups: [...old, ...groups], keep, sortIds};
+  draw();
+}
+async function openDups(ids = null) {
+  const groups = await call('dups', {ids});
+  if (!groups.length) return say('No song is in more than one file now.', 'ok');
+  askDups(groups, ui.dups?.sortIds ?? null);
+  root.querySelector('.studio-dups')?.scrollIntoView({block: 'nearest'});
+}
+async function settleDups(keepAll) {
+  const d = ui.dups;
+  if (!d) return;
+  ui.dups = null;
+  const drop = keepAll ? new Set() : new Set(d.groups.flatMap(g => g.songs.map(s => s.id)).filter(id => !d.keep.has(id)));
+  if (drop.size) {
+    /* a copy taken out of a card: a kept copy of the same song that is in no card takes its place there */
+    for (const g of d.groups) {
+      const spare = g.songs.filter(s => d.keep.has(s.id) && !cartOfSong(s.id)).map(s => s.id);
+      for (const s of g.songs) { const c = drop.has(s.id) && spare.length ? cartOfSong(s.id) : null; if (c) c.songIds[c.songIds.indexOf(s.id)] = spare.shift(); }
+    }
+    for (const c of ui.carts) c.songIds = c.songIds.filter(id => !drop.has(id));
+    for (const id of drop) ui.sel.delete(id);
+    await call('forget', {ids: [...drop]});
+  }
+  ui.made = {}; await refresh();
+  const left = (d.sortIds ?? []).filter(id => !drop.has(id) && !cartOfSong(id));
+  const sorted = left.length && ui.view.roms.length ? await sortLoose(left) : 0;
+  say((drop.size ? `${drop.size} ${drop.size === 1 ? 'copy' : 'copies'} left Build (your files are not changed)` : 'Every copy kept') +
+    (sorted ? `; sorted into ${plural(sorted, 'cartridge')}: drag songs between them to change that` : '') + '.', 'ok');
 }
 
 /* ---- the view (asked of the worker after every change; a newer one replaces an older one) ---- */
@@ -216,7 +265,7 @@ function steps(box) {
   /* 1: the LSDj versions; the highlighted one builds the cards that don't choose their own */
   const vers = el('div', {className: 'studio-vers', role: 'group', ariaLabel: 'Build with'}, ...roms.map(r => {
     const b = btn(`${r.version} · ${plural(r.kits, 'kit')}${r.full ? ' ✓' : ''}`, () => change(() => { ui.baseId = r.id; }),
-      {className: 'studio-ver' + (r.id === v.baseId ? ' on' : ''), title: `${r.name}: ${r.id === v.baseId ? 'builds the cartridges that don\'t choose their own LSDj' : 'press to build with this one'}. ${r.full ? 'The FM-1 knows this version fully.' : 'It plays, without SYNC, play state or rows in the DJ layout.'}`});
+      {className: 'studio-ver' + (r.id === v.baseId ? ' on' : ''), title: `${r.name}${r.date ? ` (${dayTime(r.date).toLowerCase()})` : ''}: ${r.id === v.baseId ? 'builds the cartridges that don\'t choose their own LSDj' : 'press to build with this one'}. ${r.full ? 'The FM-1 knows this version fully.' : 'It plays, without SYNC, play state or rows in the DJ layout.'}`});
     b.setAttribute('aria-pressed', String(r.id === v.baseId)); return b;
   }));
   /* 3: what Make all makes */
@@ -231,7 +280,7 @@ function steps(box) {
         el('span', {className: 'hint', textContent: roms.length ? `Highlighted: builds the cartridges. ✓: the FM-1 knows it fully (${FULL_LSDJ}). Kept in this browser; remove them in Cartridges.` : 'Each version brings the kits its songs were made with.'}))),
     step(songs.length, 2, 'Your songs', el('div', {textContent: `${plural(songs.length, 'song')} from ${plural(fileCount, 'file')}` + (savs && savs !== fileCount ? ` (${plural(savs, 'save')})` : '')}),
       el('div', {className: 'row'}, btn('Add files…', () => files.pick.click()), btn('Add a folder…', () => files.folder.click()),
-        btn('Start again', async () => { await call('clear'); Object.assign(ui, {carts: [], choices: {madeWith: {}, kitPick: {}}, made: {}, query: '', filter: 'all', sel: new Set(), groupOpen: new Map(), kitsOpen: null, labelOpen: null, ask: null}); await refresh(); say(''); }, {className: 'studio-link'}))),
+        btn('Start again', async () => { await call('clear'); Object.assign(ui, {carts: [], choices: {madeWith: {}, kitPick: {}}, made: {}, query: '', filter: 'all', sel: new Set(), groupOpen: new Map(), kitsOpen: null, labelOpen: null, ask: null, dups: null}); await refresh(); say(''); }, {className: 'studio-link'}))),
     step(allMade, 3, 'Make the cartridges',
       el('div', {textContent: !cards.length ? 'Put songs in a cartridge first.' : `${plural(count, 'cartridge')}${losing ? `; ${plural(losing, 'card')} can't keep every sample` : ', every sample kept'}${loose ? ` · ${loose} songs not in one` : ''}`}),
       el('div', {className: 'row'},
@@ -240,9 +289,16 @@ function steps(box) {
         made.length > 1 ? btn('Download all (.zip)', downloadAll) : null))));
 }
 
-/* ---- drawing: the songs, grouped by the file they came from ---- */
-const FILTERS = [['all', 'All', () => true], ['loose', 'Not in a cartridge', s => !cartOfSong(s.id)], ['missing', 'Kit missing', s => s.status === 'missing'], ['check', 'Check kits', s => s.status === 'check']];
-const groupOf = s => /\.lsdsng$/i.test(s.from) ? '.lsdsng songs' : /\.lsdprj$/i.test(s.from) ? '.lsdprj projects' : s.from;
+/* ---- drawing: the songs, grouped by the file they came from (or A to Z) ---- */
+const FILTERS = [['all', 'All', () => true], ['loose', 'Not in a cartridge', s => !cartOfSong(s.id)], ['missing', 'Kit missing', s => s.status === 'missing'], ['check', 'Check kits', s => s.status === 'check'],
+  ['dups', 'In more than one file', s => s.dups > 1]];
+const letterOf = s => { const l = (s.name || '').trim().charAt(0).toUpperCase(); return /[A-Z]/.test(l) ? l : '#'; };
+const groupOf = s => ui.by === 'name' ? letterOf(s) : /\.lsdsng$/i.test(s.from) ? '.lsdsng songs' : /\.lsdprj$/i.test(s.from) ? '.lsdprj projects' : s.from;
+/* a file's date (its last change, as the computer says: LSDj keeps none), and a song's version (LSDj adds one each
+   time the song is saved; in hex, as LSDj shows it) */
+const day = t => t ? new Date(t).toLocaleDateString([], {dateStyle: 'medium'}) : '';
+const dayTime = t => t ? `File dated ${new Date(t).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}` : 'No file date';
+const versionTag = v => el('span', {className: 'studio-vtag', textContent: `v${hex(v ?? 0)}`, title: `Version ${hex(v ?? 0)}: LSDj adds one each time the song is saved`});
 const KIT_COLORS = ['#e9a46b', '#e8d36b', '#9fd08a', '#7fc6c0', '#9fb6f0', '#c9a6ef', '#efa6c9', '#c8c2b4'];
 const kitColor = name => { let h = 7; for (const ch of name || '?') h = (h * 31 + ch.charCodeAt(0)) >>> 0; return KIT_COLORS[h % KIT_COLORS.length]; };
 function kitTag(k) {
@@ -302,10 +358,14 @@ function songRow(s, visible) {
   box.setAttribute('aria-label', `Select ${s.name}`);
   const note = s.status === 'missing' ? btn('kit missing', () => openKits(s.id), {className: 'studio-note bad'})
     : s.status === 'check' ? btn('check kits', () => openKits(s.id), {className: 'studio-note warn'}) : null;
+  /* its file and date when the list isn't one file a group (A to Z; the .lsdsng songs and projects together) */
+  const ownFile = ui.by === 'name' || groupOf(s) !== s.from;
   row.append(el('div', {className: 'studio-song-head'},
     el('span', {className: 'studio-grip', textContent: '⠿', title: 'Drag into a cartridge', ariaHidden: 'true'}), box,
-    el('b', {className: 'mono studio-song-name', textContent: s.name}),
+    el('b', {className: 'mono studio-song-name', textContent: s.name}), versionTag(s.version),
+    ownFile ? el('span', {className: 'hint studio-from', textContent: [s.from, day(s.date)].filter(Boolean).join(' · '), title: dayTime(s.date)}) : null,
     el('span', {className: 'studio-kittags'}, ...s.kits.map(kitTag)), note,
+    s.dups > 1 ? btn(`${s.dups} copies`, () => openDups([s.id]), {className: 'studio-note studio-dupnote', title: `${s.name} is in more than one file: choose which to keep`}) : null,
     el('span', {className: 'studio-where' + (c ? '' : ' loose')}, c ? dot(c) : null, c ? cartTitle(c) : 'not in a cartridge'),
     moreMenu(s, c)));
   if (ui.kitsOpen === s.id) row.append(kitPanel(s));
@@ -314,18 +374,25 @@ function songRow(s, visible) {
 function drawSongs(box) {
   const v = ui.view, all = v.songs;
   const q = ui.query.trim().toLowerCase(), f = FILTERS.find(x => x[0] === ui.filter) ?? FILTERS[0];
-  const shown = all.filter(s => f[2](s) && (!q || `${s.name} ${s.from}`.toLowerCase().includes(q)));
+  /* in the order chosen: as added (by file), A to Z (copies of a song together, the newest first), the newest file first */
+  const filtered = all.filter(s => f[2](s) && (!q || `${s.name} ${s.from}`.toLowerCase().includes(q)));
+  const shown = ui.by === 'name' ? [...filtered].sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}) || b.version - a.version || (b.date ?? 0) - (a.date ?? 0))
+    : ui.by === 'newest' ? [...filtered].sort((a, b) => (b.date ?? 0) - (a.date ?? 0)) : filtered;
   const search = el('input', {type: 'search', placeholder: 'Name or file', value: ui.query, className: 'cm-search',
     oninput: () => { ui.query = search.value; const pos = search.selectionStart; draw(); const s2 = root.querySelector('.cm-search'); s2.focus(); s2.setSelectionRange(pos, pos); }});
   search.setAttribute('aria-label', 'Find a song or file');
+  const by = el('select', {className: 'studio-by', onchange: () => { ui.by = by.value; store.set(BY, by.value); draw(); }},
+    new Option('By file', 'file'), new Option('A to Z', 'name'), new Option('Newest file first', 'newest'));
+  by.value = ui.by; by.setAttribute('aria-label', 'Show the songs');
+  const dupCount = all.filter(s => s.dups > 1).length;
   box.append(el('div', {className: 'studio-panel-head'}, el('h3', {textContent: 'Songs'}), el('span', {className: 'hint', textContent: plural(all.length, 'song')})),
-    search,
+    el('div', {className: 'studio-searchrow'}, search, by),
     el('div', {className: 'studio-filters', role: 'group', ariaLabel: 'Show'}, ...FILTERS.map(([key, label, test]) => {
       const n = all.filter(test).length;
       if (key !== 'all' && key !== 'loose' && !n) return null;
       const b = btn(`${label} ${n}`, () => { ui.filter = key; draw(); }, {className: `studio-filter ${key}` + (ui.filter === key ? ' on' : '')});
       b.setAttribute('aria-pressed', String(ui.filter === key)); return b;
-    })));
+    }), dupCount && !ui.dups ? btn('Choose which to keep…', () => openDups(), {className: 'studio-link'}) : null));
   /* several ticked: where they go */
   if (ui.sel.size) {
     const put = el('select', {className: 'studio-put', onchange: () => { const to = put.value; if (to) change(() => moveSongs(inOrder(ui.sel), to === '-' ? null : to)); }},
@@ -335,7 +402,8 @@ function drawSongs(box) {
       btn('New cartridge', () => change(() => moveSongs(inOrder(ui.sel), newCart().id))),
       btn('Untick all', () => { ui.sel.clear(); draw(); }, {className: 'studio-link'})));
   }
-  /* the groups: a save each, all .lsdsng songs together, all projects together; folded when there are many songs */
+  /* the groups: a save each, all .lsdsng songs together, all projects together (A to Z: a letter each); folded when
+     there are many songs */
   const groups = new Map(), totals = new Map();
   for (const s of all) totals.set(groupOf(s), (totals.get(groupOf(s)) ?? 0) + 1);
   for (const s of shown) { const g = groupOf(s); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(s); }
@@ -353,8 +421,12 @@ function drawSongs(box) {
     const fold = btn(open ? '▾' : '▸', () => { ui.groupOpen.set(g, !open); draw(); }, {className: 'studio-fold'});
     fold.setAttribute('aria-expanded', String(open)); fold.setAttribute('aria-label', `${open ? 'Fold' : 'Unfold'} ${g}`);
     const group = el('section', {className: 'studio-group'}, el('div', {className: 'studio-group-head'}, fold, all_,
-      el('b', {className: 'studio-group-name', textContent: g, onclick: () => { ui.groupOpen.set(g, !open); draw(); }}),
-      el('span', {className: 'hint', textContent: songs.length === totals.get(g) ? plural(songs.length, 'song') : `${songs.length} of ${plural(totals.get(g), 'song')}`}),
+      /* its name, and under it how many songs and (one file) the file's date */
+      el('span', {className: 'studio-group-title'},
+        el('b', {className: 'studio-group-name', textContent: g, onclick: () => { ui.groupOpen.set(g, !open); draw(); }}),
+        el('span', {className: 'hint studio-group-meta'}, songs.length === totals.get(g) ? plural(songs.length, 'song') : `${songs.length} of ${plural(totals.get(g), 'song')}`,
+          g === songs[0].from && songs[0].date ? ' · ' : null,
+          g === songs[0].from && songs[0].date ? el('span', {className: 'studio-group-date', textContent: day(songs[0].date), title: dayTime(songs[0].date)}) : null)),
       el('span', {className: 'hint studio-group-where', textContent: whereText})));
     if (open) {
       const ul = el('ul', {className: 'studio-songs'});
@@ -488,13 +560,53 @@ function drawCarts(box) {
   const byId = new Map(v.carts.map(p => [p.id, p]));
   box.append(el('div', {className: 'studio-cards'}, ...ui.carts.map(c => cartCard(c, byId.get(c.id)))));
 }
+/* ---- drawing: songs in more than one file, each copy with its file, date and version; the ticked ones stay ---- */
+function drawDups(box) {
+  const d = ui.dups, n = d.groups.length, leaving = d.groups.flatMap(g => g.songs).filter(s => !d.keep.has(s.id)).length;
+  const list = el('div', {className: 'studio-dups-list'});
+  for (const g of d.groups) {
+    const fileOf = new Map(g.songs.map(s => [s.id, s.from]));
+    const sameDay = new Set(g.songs.map(s => day(s.date))).size < g.songs.length;   /* (then the time tells them apart) */
+    const what = g.same ? (g.names.length > 1 ? `the same song, named ${g.names.join(' and ')}` : g.songs.length === 2 ? 'the same in both' : `the same in all ${g.songs.length}`)
+      : `${g.versions} different versions`;
+    const ul = el('ul', {className: 'studio-dup-copies'});
+    g.songs.forEach((s, i) => {
+      const tick = el('input', {type: 'checkbox', checked: d.keep.has(s.id), onchange: () => { tick.checked ? d.keep.add(s.id) : d.keep.delete(s.id); draw(); }});
+      tick.setAttribute('aria-label', `Keep ${s.name} from ${s.from}`);
+      const c = cartOfSong(s.id);
+      ul.append(el('li', {className: d.keep.has(s.id) ? '' : 'off'}, el('label', {},
+        tick,
+        g.names.length > 1 ? el('b', {className: 'mono', textContent: s.name}) : null,
+        el('span', {className: 'studio-dup-file', textContent: s.from + (s.slot != null ? ` (song ${hex(s.slot)})` : '')}),
+        el('span', {className: 'studio-dup-date', textContent: sameDay ? dayTime(s.date).replace(/^File dated /, '') : day(s.date) || 'no date', title: dayTime(s.date)}),
+        versionTag(s.version),
+        i === 0 && !g.same ? el('span', {className: 'ok studio-dup-newest', textContent: 'newest'}) : null,
+        s.same ? el('span', {className: 'hint', textContent: `same as ${fileOf.get(s.same)}`}) : null,
+        c ? el('span', {className: 'hint', textContent: `in ${cartTitle(c)}`}) : null)));
+    });
+    list.append(el('div', {className: 'studio-dup'},
+      el('div', {className: 'studio-dup-head'}, el('b', {className: 'mono', textContent: g.names[0]}), el('span', {className: 'hint', textContent: what})),
+      g.unsure ? el('p', {className: 'warn studio-dup-unsure', textContent: `${fileOf.get(g.latest)} is the newest file but holds a lower version: check which to keep.`}) : null,
+      ul));
+  }
+  box.append(el('section', {className: 'studio-dups', ariaLabel: 'Songs in more than one file'},
+    el('div', {className: 'studio-dups-top'}, el('h3', {textContent: `${plural(n, 'song')} ${n === 1 ? 'is' : 'are'} in more than one file`}),
+      el('span', {className: 'hint', textContent: 'Tick the copies to keep: the newest of each is ticked. The others leave Build; your files are not changed.'})),
+    list,
+    el('div', {className: 'row studio-dups-acts'},
+      btn(leaving ? `Keep these (${leaving} leave)` : 'Keep these', () => settleDups(false), {className: 'primary'}),
+      btn('Keep them all', () => settleDups(true)),
+      btn('The newest of each', () => { d.keep = keepNewest(d.groups); draw(); }, {className: 'studio-link'}))));
+}
 function draw() {
   if (!root) return;
   const top = root.querySelector('.studio-top'), pool = root.querySelector('.studio-pool'), carts = root.querySelector('.studio-carts'), grid = root.querySelector('.studio-grid');
+  const dupBox = root.querySelector('.studio-dupbox');
   const empty = !ui.view?.songs.length;
-  top.replaceChildren(); pool.replaceChildren(); carts.replaceChildren();
+  top.replaceChildren(); pool.replaceChildren(); carts.replaceChildren(); dupBox.replaceChildren();
   if (empty) intro(top); else steps(top);
   grid.hidden = empty;
+  if (!empty && ui.dups) drawDups(dupBox);
   if (!empty) { drawSongs(pool); drawCarts(carts); }
   root.classList.toggle('busy', !!ui.busy);
   root.classList.toggle('empty', empty);
@@ -566,6 +678,7 @@ async function mount(box) {
   box.append(files.pick, files.rom, files.folder,
     el('div', {className: 'studio-top'}),
     el('p', {className: 'hint studio-status', role: 'status'}),
+    el('div', {className: 'studio-dupbox'}),
     el('div', {className: 'studio-grid', hidden: true}, el('div', {className: 'studio-pool'}), el('div', {className: 'studio-carts'})));
   /* files dropped anywhere on the Studio; a song being dragged between cards is not a file */
   box.ondragover = e => { if (!ui.drag && [...(e.dataTransfer?.types ?? [])].includes('Files')) { e.preventDefault(); box.classList.add('drop'); } };

@@ -420,6 +420,30 @@ body.studio-wide main,body.studio-wide .top-in{max-width:1320px}
 .studio-ask{margin-top:6px;padding:8px 10px;border:1px solid var(--accent);border-radius:9px;font-size:13px}
 .studio-ask p{margin:0 0 6px}
 @media (max-width:600px){.studio-group-where{display:none}.studio-carts-acts{margin-left:0}}
+/* Build's song list: by file, A to Z or the newest file first; each song's version and (not one file a group) its file and date */
+.studio-searchrow{display:flex;gap:6px;align-items:center}
+.studio-searchrow .cm-search{flex:1;min-width:0}
+.studio-by{width:auto;flex:none;font-size:13px;padding:5px 8px;border-radius:9px}
+.studio-vtag{font:500 11px/1 var(--font-data);color:var(--muted)}
+.studio-from{order:9;flex:1 0 100%;box-sizing:border-box;padding-left:32px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-group-title{display:flex;flex-direction:column;min-width:0;flex:0 1 auto}
+.studio-group-meta{font-size:12px}
+.studio-dupnote{color:var(--accent)}
+/* songs in more than one file: which copies to keep */
+.studio-dups{margin:0 0 12px;padding:12px;border:1px solid var(--accent);border-radius:12px;background:var(--card2)}
+.studio-dups-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:8px}
+.studio-dups-top h3{margin:0}
+.studio-dups-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:8px;max-height:60vh;overflow:auto}
+.studio-dup{min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.studio-dup-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
+.studio-dup-unsure{margin:2px 0 4px;font-size:12px}
+.studio-dup-copies{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:13px}
+.studio-dup-copies label{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;cursor:pointer}
+.studio-dup-copies li.off{opacity:.55}
+.studio-dup-file{overflow-wrap:anywhere}
+.studio-dup-date{color:var(--muted);font-size:12px}
+.studio-dup-newest{font-size:12px;font-weight:600}
+.studio-dups-acts{margin-top:10px}
 /* Studio › Build's search, and its kit and LSDj choices (studio-ui.js) */
 .cm-search{min-width:12em;flex:1}
 .cm-kits div{white-space:nowrap}

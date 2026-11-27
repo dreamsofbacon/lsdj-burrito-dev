@@ -15,60 +15,102 @@ const sha = async b => [...new Uint8Array(await crypto.subtle.digest('SHA-256', 
 /* songs: [{id, group, from, name, nameBytes, version, song}]; roms / kitFiles as resolveSongs takes them (library: from
    this browser's LSDj files; files: dropped here); picks: the kit picks a project's own kits make; template: the first
    .sav's bytes (its LSDj settings go into the carts) */
-export const newState = () => ({songs: [], libRoms: [], fileRoms: [], kitFiles: [], picks: {}, rules: {}, template: null, built: new Set(), seq: 0, full: new Map()});
+export const newState = () => ({songs: [], libRoms: [], fileRoms: [], kitFiles: [], picks: {}, rules: {}, template: null, built: new Set(), seq: 0, full: new Map(),
+  fileKeys: new Map()});   /* the song files added: their hash -> {group, name} */
 /* which LSDj files the FM-1 knows fully (lsdj-rom.js profiles 1 and 3: LSDj 9.2.0 to 9.4.2: SYNC, play state and
    rows for the DJ layout, MIDI sync, cues); other versions run, without those. Checked once a file (by id). */
 export async function checkRoms(st) {
   for (const r of [...st.libRoms, ...st.fileRoms]) if (!st.full.has(r.id)) st.full.set(r.id, [1, 3].includes((await findProfile(r.rom).catch(() => null))?.profile));
 }
 const roms = st => { const m = new Map(); for (const r of [...st.libRoms, ...st.fileRoms]) if (!st.built.has(r.id)) m.set(r.id, r); return [...m.values()]; };
-const romEntry = (id, name, rom) => ({id, name, rom, slots: kitSlots(rom), version: S.lsdjVersion(rom), format: S.lsdjFormat(rom)});
+const romEntry = (id, name, rom, date = null) => ({id, name, rom, date, slots: kitSlots(rom), version: S.lsdjVersion(rom), format: S.lsdjFormat(rom)});
 
 /* this browser's LSDj and .kit files ([{id, kind, name, bytes}]); built: the ids of carts made here (not sources) */
 export function setLibrary(st, files, built = []) {
   st.built = new Set(built);
-  st.libRoms = files.filter(f => f.kind === 'rom').map(f => { try { return romEntry(f.id, f.name, f.bytes); } catch { return null; } }).filter(r => r?.slots.length);
+  st.libRoms = files.filter(f => f.kind === 'rom').map(f => { try { return romEntry(f.id, f.name, f.bytes, f.date ?? null); } catch { return null; } }).filter(r => r?.slots.length);
   st.kitFiles = [...st.kitFiles.filter(k => k.project), ...files.filter(f => f.kind === 'kit' && isKitBank(f.bytes)).map(f => ({id: f.id, name: f.name, bank: f.bytes.subarray(0, BANK)}))];
 }
 
-/* files dropped in: [{name, bytes}] -> {songs, roms: [{id, name, bytes}] (to keep in the library), kits (same), skipped:
-   [{name, why}]} */
+/* files dropped in: [{name, bytes, date (the file's last change, ms)}] -> {songs, roms: [{id, name, bytes, date}] (to keep
+   in the library), kits (same), skipped: [{name, why}]}. A song file already here (the same bytes, under any name) is
+   skipped. Each song keeps its file's date and a key (its bytes' hash: the same song in another file, dupGroups). */
 export async function addFiles(st, files) {
   const out = {songs: 0, roms: [], kits: [], skipped: []};
-  for (const {name, bytes} of files) {
+  for (const {name, bytes, date = null} of files) {
     const ext = (/\.[^.]+$/.exec(name)?.[0] ?? '').toLowerCase(), group = `f${st.seq++}`;
-    const add = s => { st.songs.push({id: `${group}:${st.songs.length}`, group, from: name, ...s}); out.songs++; };
+    const add = async s => { const key = await sha(s.song); st.songs.push({id: `${group}:${st.songs.length}`, group, from: name, date, key, ...s}); out.songs++; };
     try {
+      const isSav = ext !== '.lsdprj' && ext !== '.lsdsng' && (ext === '.sav' || savBody(bytes).length === SAV_SIZE);
+      if (ext === '.lsdprj' || ext === '.lsdsng' || isSav) {
+        const fileKey = await sha(isSav ? savBody(bytes) : bytes), twin = st.fileKeys.get(fileKey);
+        if (twin && st.songs.some(x => x.group === twin.group)) { out.skipped.push({name, why: twin.name === name ? 'added already' : `the same file as ${twin.name}`}); continue; }
+        st.fileKeys.set(fileKey, {group, name});
+      }
       if (ext === '.lsdprj') {
         const p = readLsdprj(bytes), id = `${group}:${st.songs.length}`;
-        add({name: p.name, nameBytes: p.nameBytes, version: p.version, song: p.song});
+        await add({name: p.name, nameBytes: p.nameBytes, version: p.version, song: p.song});
         const {map, rule} = S.projectKits(p.song, p.kits);
         p.kits.forEach((bank, i) => st.kitFiles.push({id: `${group}k${i}`, name: `${name} kit ${i + 1}`, bank, project: true}));
         for (const [n, i] of map) st.picks[`${id}:${n}`] = `kit:${group}k${i}`;
         st.rules[id] = rule;
       } else if (ext === '.lsdsng') {
-        const s = readLsdsng(bytes); add({name: s.name, nameBytes: s.nameBytes, version: s.version, song: s.song});
-      } else if (ext === '.sav' || savBody(bytes).length === SAV_SIZE) {
+        const x = readLsdsng(bytes); await add({name: x.name, nameBytes: x.nameBytes, version: x.version, song: x.song});
+      } else if (isSav) {
         const sav = parseSav(bytes.slice());
         st.template ??= sav.bytes;
-        for (const s of sav.songs) {
-          try { add({slot: s.slot, name: s.name, nameBytes: sav.bytes.slice(0x8000 + s.slot * 8, 0x8008 + s.slot * 8), version: s.version, song: songBytes(sav, s.slot)}); }
-          catch (e) { if (!(e instanceof SavError)) throw e; out.skipped.push({name: `${name} ${s.name}`, why: e.message}); }
+        for (const x of sav.songs) {
+          try { await add({slot: x.slot, name: x.name, nameBytes: sav.bytes.slice(0x8000 + x.slot * 8, 0x8008 + x.slot * 8), version: x.version, song: songBytes(sav, x.slot)}); }
+          catch (e) { if (!(e instanceof SavError)) throw e; out.skipped.push({name: `${name} ${x.name}`, why: e.message}); }
         }
       } else if (ext === '.kit' || (bytes.length === BANK && isKitBank(bytes))) {
         if (!isKitBank(bytes)) throw new SavError('not an LSDj .kit file');
         const id = await sha(bytes.subarray(0, BANK));
-        st.kitFiles.push({id, name, bank: bytes.slice(0, BANK)}); out.kits.push({id, name, bytes: bytes.slice(0, BANK)});
+        st.kitFiles.push({id, name, bank: bytes.slice(0, BANK)}); out.kits.push({id, name, bytes: bytes.slice(0, BANK), date});
       } else if (['.gb', '.gbc'].includes(ext)) {
         validateRom(bytes);
-        const r = romEntry(await sha(bytes), name, bytes);
+        const r = romEntry(await sha(bytes), name, bytes, date);
         if (!r.slots.length) throw new SavError('an LSDj with no kit slots');
-        st.fileRoms.push(r); out.roms.push({id: r.id, name, bytes});
+        st.fileRoms.push(r); out.roms.push({id: r.id, name, bytes, date});
       } else out.skipped.push({name, why: 'not a song, project, save, LSDj or kit'});
     } catch (e) { out.skipped.push({name, why: e.message}); }
   }
   await checkRoms(st);
   return out;
+}
+
+/* songs in more than one file: those of one name (copies and other versions of it), and the same bytes under other
+   names (a renamed copy). Never linked further (A's bytes are B's, B's name is C's…): that would chain songs that have
+   nothing to do with each other (say, a few empty new songs) into one group. A song may be in both kinds. */
+function dupSets(st) {
+  const by = keyOf => { const m = new Map(); for (const x of st.songs) { const k = keyOf(x); if (k) { if (!m.has(k)) m.set(k, []); m.get(k).push(x); } } return [...m.values()].filter(g => g.length > 1); };
+  const named = by(x => x.name?.trim());
+  const renamed = by(x => x.key).filter(g => new Set(g.map(x => x.name?.trim())).size > 1);
+  return [...named, ...renamed];
+}
+/* the songs in more than one file that hold any of ids (null: all) -> [{names, same (every copy the same bytes),
+   versions (how many different), unsure, latest, songs: [{id, name, from, slot, date, version, same}]}], each one's
+   songs newest first: the higher version (LSDj adds one each time a song is saved), then the later file. same: the id
+   of an earlier copy with the same bytes. unsure: the latest file holds another, lower version (latest: its id) */
+export function dupGroups(st, ids = null) {
+  const want = ids && new Set(ids);
+  const newer = (a, b) => (b.version ?? 0) - (a.version ?? 0) || (b.date ?? 0) - (a.date ?? 0);
+  return dupSets(st).filter(g => !want || g.some(x => want.has(x.id))).map(g => {
+    const songs = [...g].sort(newer), top = songs[0];
+    const latest = songs.reduce((p, x) => (x.date ?? 0) > (p.date ?? 0) ? x : p);
+    const twice = f => songs.filter(x => x.from === f).length > 1;
+    return {names: [...new Set(songs.map(x => x.name))], same: new Set(songs.map(x => x.key)).size === 1, versions: new Set(songs.map(x => x.key)).size,
+      unsure: latest.key !== top.key && (latest.date ?? 0) > (top.date ?? 0), latest: latest.id,
+      songs: songs.map((x, i) => ({id: x.id, name: x.name, from: x.from, slot: twice(x.from) ? x.slot ?? null : null, date: x.date ?? null, version: x.version ?? 0,
+        same: songs.slice(0, i).find(y => y.key === x.key)?.id ?? null}))};
+  }).sort((a, b) => a.names[0].localeCompare(b.names[0], undefined, {numeric: true}));
+}
+/* songs taken out (copies not kept): gone from the view and the plans; their files may be added again */
+export function forget(st, ids) {
+  const gone = new Set(ids);
+  st.songs = st.songs.filter(x => !gone.has(x.id));
+  for (const id of gone) delete st.rules[id];
+  for (const k of Object.keys(st.picks)) if (gone.has(k.slice(0, k.lastIndexOf(':')))) delete st.picks[k];
 }
 
 /* what the panel shows. req: {ticked: [ids] | null (all), choices: {madeWith, kitPick}, baseId, plan: 'split' | 'most'}
@@ -83,11 +125,13 @@ export function view(st, req, capacity) {
   const byVersion = [...list].sort((a, b) => S.compareVersions(b.version ?? [0], a.version ?? [0]));
   const best = byVersion.find(r => st.full.get(r.id)) ?? byVersion[0];
   const baseId = list.some(r => r.id === req.baseId) ? req.baseId : best?.id ?? null;
+  const dupSize = new Map();
+  for (const g of dupSets(st)) for (const x of g) dupSize.set(x.id, Math.max(dupSize.get(x.id) ?? 0, g.length));
   const songs = resolved.map(r => {
-    const rule = st.rules[r.id] ?? null;
+    const rule = st.rules[r.id] ?? null, own = byId.get(r.id);
     const silent = n => choices.kitPick[`${r.id}:${n}`] === 'none';   /* (left silent on purpose: not missing) */
     const status = r.missing.some(n => !silent(n)) ? 'missing' : rule === 'guess' ? 'check' : 'ok';
-    return {id: r.id, name: r.name, from: byId.get(r.id).from, blocks: r.blocks, made: r.rom?.id ?? null, madeAuto: r.auto, rule, status,
+    return {id: r.id, name: r.name, from: own.from, date: own.date ?? null, version: own.version ?? 0, dups: dupSize.get(r.id) ?? 1, blocks: r.blocks, made: r.rom?.id ?? null, madeAuto: r.auto, rule, status,
       kits: r.kits.map(k => ({number: k.number, name: k.name, source: k.source?.label ?? null, missing: !k.bank && !silent(k.number), silent: silent(k.number), samples: k.samples.size}))};
   });
   /* each song's LSDj: the one chosen when it opens the song's format; else one that does (LSDj 9.3.9 first, then the
@@ -104,7 +148,7 @@ export function view(st, req, capacity) {
     x.format = f; x.on = home?.id ?? null;
     x.needs = base && !S.opens(base.format, f) ? (home && S.opens(home.format, f) ? 'moved' : 'none') : null;
   }
-  const out = {songs, roms: list.map(r => ({id: r.id, name: r.name, version: S.versionText(r.version), full: !!st.full.get(r.id), format: r.format, kits: r.slots.filter(s => !s.empty).length,
+  const out = {songs, roms: list.map(r => ({id: r.id, name: r.name, date: r.date ?? null, version: S.versionText(r.version), full: !!st.full.get(r.id), format: r.format, kits: r.slots.filter(s => !s.empty).length,
       slots: r.slots.filter(s => !s.empty).map(s => ({number: s.number, name: s.kit.name}))})),
     kitFiles: st.kitFiles.filter(k => !k.project).map(k => ({id: k.id, name: k.name})), baseId, plans: [], capacity};
   const ticked = req.ticked ? new Set(req.ticked) : null, picked = resolved.filter(r => !ticked || ticked.has(r.id));

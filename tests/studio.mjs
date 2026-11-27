@@ -2,10 +2,10 @@
 // lsdj/cart-core.js studioView / autoSort / buildStudio: carts arranged by hand, with made-up ROMs, kits and songs
 // only (node tests/studio.mjs). No real LSDj or song is used: users bring their own.
 import assert from 'node:assert/strict';
-import {parseSav, buildSav, SAV_SIZE} from '../lsdj/lsdj-sav.js';
+import {parseSav, buildSav, writeLsdsng, SAV_SIZE} from '../lsdj/lsdj-sav.js';
 import {listKits} from '../lsdj/lsdj-rom.js';
 import {kitSlots} from '../lsdj/lsdj-kit.js';
-import {newState, setLibrary, addFiles, studioView, autoSort, buildStudio} from '../lsdj/cart-core.js';
+import {newState, setLibrary, addFiles, studioView, autoSort, buildStudio, dupGroups, forget} from '../lsdj/cart-core.js';
 import {kitOf, lsdj, song, blank} from './lsdj-fixtures.mjs';
 
 const KA = kitOf('ALPHA', [4, 5], true, 1), KB = kitOf('BRAVO', [3, 3, 3], true, 7);
@@ -88,4 +88,50 @@ assert.deepEqual(v.carts.map(c => [c.fit, c.songs.length, c.fits]), [[32, 32, tr
 /* sort for me says which file a cartridge's songs all came from (its name) */
 assert.deepEqual(autoSort(st, {songIds: ids40.slice(0, 20)}, CAP).map(c => c.from), ['one.sav']);
 assert.deepEqual(autoSort(st, {songIds: ids40.slice(10, 30)}, CAP).map(c => c.from), [null], 'two files: no name');
-console.log('PASS studio: carts by hand (order, kits, LSDj choice, lost kits), sort for me (named after the file), built carts; a card of 40 songs makes two cartridges with every sample, or says the first 32 fit');
+/* songs in more than one file: a file added twice is skipped; the same song (its bytes) or the same name in two files
+   is a group, newest first (the higher version, then the later file); copies not kept are forgotten */
+{
+  const d = newState(), JAN = Date.UTC(2026, 0, 12), MAR = Date.UTC(2026, 2, 3), APR = Date.UTC(2026, 3, 1);
+  setLibrary(d, [{id: 'r1', kind: 'rom', name: 'v939.gb', bytes: rom, date: JAN}]);
+  const fri5 = song([{ins: 0, k1: 0}], [0x10, 0x11]), fri9 = song([{ins: 0, k1: 0}], [0x10, 0x12]), house = song([{ins: 0, k1: 1}], [0x30, 0x31]), solo = song([{ins: 0, k1: 1}], [0x40]);
+  const jan = buildSav(blank(), fri5, [{slot: 0, name: 'FRIDAY', version: 5, song: fri5}, {slot: 1, name: 'HOUSE', version: 2, song: house}], 0);
+  const mar = buildSav(blank(), fri9, [{slot: 0, name: 'FRIDAY', version: 9, song: fri9}, {slot: 1, name: 'HOUSE', version: 2, song: house}, {slot: 2, name: 'SOLO', version: 1, song: solo}], 0);
+  let out = await addFiles(d, [{name: 'gig-jan.sav', bytes: jan, date: JAN}, {name: 'gig-mar.sav', bytes: mar, date: MAR}, {name: 'gig-mar (1).sav', bytes: mar, date: APR}]);
+  assert.equal(out.songs, 5);
+  assert.deepEqual(out.skipped, [{name: 'gig-mar (1).sav', why: 'the same file as gig-mar.sav'}], 'the same file twice: once');
+  const dv = studioView(d, {carts: []}, CAP), sid = (n, f) => dv.songs.find(s => s.name === n && s.from === f).id;
+  assert.deepEqual(dv.songs.map(s => [s.name, s.version, s.date, s.dups]), [['FRIDAY', 5, JAN, 2], ['HOUSE', 2, JAN, 2], ['FRIDAY', 9, MAR, 2], ['HOUSE', 2, MAR, 2], ['SOLO', 1, MAR, 1]]);
+  assert.equal(dv.roms[0].date, JAN, 'an LSDj file keeps its date');
+  let groups = dupGroups(d);
+  assert.equal(groups.length, 2);
+  const fri = groups.find(g => g.names[0] === 'FRIDAY'), hou = groups.find(g => g.names[0] === 'HOUSE');
+  assert.deepEqual(fri.songs.map(s => [s.from, s.version]), [['gig-mar.sav', 9], ['gig-jan.sav', 5]], 'newest first: the higher version');
+  assert.ok(!fri.same && fri.versions === 2 && !fri.unsure);
+  assert.ok(hou.same && hou.versions === 1, 'HOUSE: the same in both');
+  assert.deepEqual(hou.songs.map(s => s.from), ['gig-mar.sav', 'gig-jan.sav'], 'the same version: the later file first');
+  assert.equal(hou.songs[1].same, hou.songs[0].id, 'its copy says which it is the same as');
+  assert.deepEqual(dupGroups(d, [sid('SOLO', 'gig-mar.sav')]), [], 'SOLO is in one file');
+  assert.deepEqual(dupGroups(d, [sid('FRIDAY', 'gig-jan.sav')]).map(g => g.names), [['FRIDAY']], 'only the groups asked about');
+  /* the latest file with a lower version of it: unsure */
+  const fri7 = song([{ins: 0, k1: 0}], [0x10, 0x13]);
+  out = await addFiles(d, [{name: 'friday.lsdsng', bytes: writeLsdsng({name: 'FRIDAY', version: 7, song: fri7}), date: APR}]);
+  groups = dupGroups(d, [sid('FRIDAY', 'gig-mar.sav')]);
+  assert.ok(groups[0].unsure && groups[0].versions === 3, 'the April file has v7, March v9: unsure');
+  assert.equal(groups[0].songs.find(s => s.id === groups[0].latest).from, 'friday.lsdsng');
+  /* a renamed copy (the same bytes): the same group */
+  await addFiles(d, [{name: 'solo2.lsdsng', bytes: writeLsdsng({name: 'SOLO2', version: 1, song: solo}), date: APR}]);
+  const so = dupGroups(d, [sid('SOLO', 'gig-mar.sav')]);
+  assert.ok(so.length === 1 && so[0].same && so[0].names.join() === 'SOLO2,SOLO', `the same song under another name (the later file first): ${so[0]?.names}`);
+  /* the copies not kept: gone; their file may come in again */
+  forget(d, [sid('FRIDAY', 'gig-jan.sav'), sid('HOUSE', 'gig-jan.sav')]);
+  assert.equal(studioView(d, {carts: []}, CAP).songs.filter(s => s.from === 'gig-jan.sav').length, 0);
+  out = await addFiles(d, [{name: 'gig-jan.sav', bytes: jan, date: JAN}]);
+  assert.equal(out.songs, 2, 'a file whose songs were all taken out comes in again');
+  /* never chained: ALPHA's bytes are BETA's, and BETA's name is another song's: two groups, ALPHA never with that one */
+  const c = newState(), one = song([{ins: 0, k1: 0}], [0x50, 0x51]), other = song([{ins: 0, k1: 0}], [0x60, 0x61]);
+  await addFiles(c, [{name: 'a.lsdsng', bytes: writeLsdsng({name: 'ALPHA', version: 1, song: one})}, {name: 'b.lsdsng', bytes: writeLsdsng({name: 'BETA', version: 1, song: one})},
+    {name: 'b2.lsdsng', bytes: writeLsdsng({name: 'BETA', version: 4, song: other})}]);
+  const cg = dupGroups(c).map(g => g.songs.map(s => `${s.name}@${s.from}`).sort().join());
+  assert.deepEqual(cg.sort(), ['ALPHA@a.lsdsng,BETA@b.lsdsng', 'BETA@b.lsdsng,BETA@b2.lsdsng'], `two groups, not one chain: ${cg}`);
+}
+console.log('PASS studio: carts by hand (order, kits, LSDj choice, lost kits), sort for me (named after the file), built carts; a card of 40 songs makes two cartridges with every sample, or says the first 32 fit; songs in more than one file (a file twice skipped, the same song or name grouped newest first, unsure dates, a renamed copy, copies forgotten)');
