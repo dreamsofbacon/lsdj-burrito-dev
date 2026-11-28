@@ -433,7 +433,7 @@ function deckSync(d) {
   say(`Deck ${NAMES[d.i]}: synced to the master, ${bpmText(d.bpm)} BPM` + (d.clock?.running ? '.' : ': Play starts it on the master\'s bar.'));
 }
 function setSynced(d, on) {
-  if (d.synced && !on && !d.bendTimer && d.clock?.factor !== 1) d.clock.bend(1);   /* (the master's trim let go too) */
+  if (d.synced && !on && !d.bendTimer && d.clock && d.clock.factor !== 1) d.clock.bend(1);   /* (the master's trim let go too; no clock: a deck emptied, assign) */
   d.synced = on;
   d.ui?.sync?.classList.toggle('on', on); d.ui?.sync?.setAttribute('aria-pressed', String(on));
 }
@@ -1173,6 +1173,7 @@ function drawDeck(d) {
   u.body.replaceChildren();
   u.box.classList.toggle('empty', !d.key);
   u.info = null; u.hold = null; u.map = null; u.rowIn = null; u.pitch = null; u.jog = null; u.kills = null; u.beatShown = undefined; u.play = null;
+  u.bpm = null; u.chain = null;   /* (an emptied deck: tick passes it by; its old jog's lines threw on every frame) */
   if (!d.key) { u.body.append(el('p', {className: 'hint dj-empty', textContent: 'Choose an FM-1 or another MIDI device for this deck.'})); return; }
   const running = !!d.clock?.running;
 
