@@ -448,13 +448,24 @@ export class Link {
    phrase of its chain it plays, 0..15, and the chain's phrases, 1..16; null before)}; unknown: null */
 const SYNCS = {0: 'off', 1: 'lsdj', 3: 'midi', 5: 'keybd'};
 export function liveDj(e) {
-  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null, speed: null, rescue: null};
+  if (e.length < 11) return {rows: null, songRows: null, sync: null, live: null, level: null, chainPos: null, chainLen: null, speed: null, rescue: null, stop: null};
   const k = b => b === 0xFF ? null : b;
   return {rows: [...e.slice(0, 4)].map(k), songRows: [...e.slice(4, 8)].map(k), sync: SYNCS[e[8]] ?? null,
           live: e[9] === 0xFF ? null : !!e[9], level: k(e[10]),
           chainPos: e.length >= 19 ? [...e.slice(11, 15)].map(k) : null, chainLen: e.length >= 19 ? [...e.slice(15, 19)].map(k) : null,
           speed: e.length >= 23 ? speedFrom(rd32(e, 19)) : null,
-          rescue: e.length >= 33 ? rescueFrom(rd32(e, 23), rd32(e, 27), rd16(e, 31)) : null};
+          rescue: e.length >= 33 ? rescueFrom(rd32(e, 23), rd32(e, 27), rd16(e, 31)) : null,
+          stop: e.length >= 42 ? stopFrom(e[33], rd32(e, 34), rd16(e, 38), rd16(e, 40)) : null};
+}
+
+/* 0.9.98-dev.28, why LSDj last stopped (firmware lsdj_stopwhy.h; LIVE after the stall rescue) -> {why: 'quiet' (the MIDI
+   clock went quiet 3 s), 'midi-stop', 'button' (one on the FM-1), 'lsdj' (none of those: LSDj itself), agoMs (since),
+   gapMs (from the last clock tick to the stop; null: no clock), gapMaxMs (the longest gap between ticks while it
+   played; null: 65 s or more, or no clock)}, or null (not stopped since power on, older firmware) */
+const STOP_WHY = {1: 'quiet', 2: 'midi-stop', 3: 'button', 4: 'lsdj'};
+export function stopFrom(why, ago, gap, gapMax) {
+  if (!STOP_WHY[why] || ago === 0xFFFFFFFF) return null;
+  return {why: STOP_WHY[why], agoMs: ago >>> 0, gapMs: gap === 0xFFFF ? null : gap, gapMaxMs: gapMax === 0xFFFF ? null : gapMax};
 }
 
 /* 0.9.98-dev.26, the stall rescue's counts since power-on (firmware board.c rescue_word; LIVE after the speed test):

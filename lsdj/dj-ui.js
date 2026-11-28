@@ -937,6 +937,16 @@ async function poll() {
 /* stopped on the FM-1 itself (its own buttons): the page's clock for that deck stops too (the jog, the beat lights
    and PLAY with it). Only once the FM-1 has played since the deck started (LSDj takes a moment to start on the
    page's Start), and then said twice running (two polls, about 0.8 s) that no channel plays. */
+/* why the FM-1 says LSDj stopped (0.9.98-dev.28 LIVE; link.js stopFrom), for the Log: Colin's deck A stopped as deck B
+   began an install, and the Log couldn't say why (2026-11-27). '' when it doesn't say (older firmware, or not this stop) */
+const STOP_TEXT = {quiet: 'its MIDI clock went quiet for 3 s', 'midi-stop': 'a MIDI Stop reached it',
+  button: 'a button on it was pressed', lsdj: 'LSDj stopped by itself (nothing from the clock, MIDI or its buttons)'};
+function stopWhy(s) {
+  if (!s || s.agoMs > 10000) return '';
+  const clock = s.gapMs == null ? 'no MIDI clock reached it'
+    : `its last MIDI clock ${s.gapMs} ms before; the longest gap in its clock while it played ${s.gapMaxMs == null ? 'over 65 s' : `${s.gapMaxMs} ms`}`;
+  return `: ${STOP_TEXT[s.why]} (${clock})`;
+}
 function fm1Stopped(d) {
   if (d.live?.playing) uncue(d);   /* (started on the FM-1 itself: its start row used) */
   if (!d.clock?.running) { d.seenPlaying = false; d.idlePolls = 0; return; }
@@ -944,7 +954,7 @@ function fm1Stopped(d) {
   if (!d.seenPlaying || ++d.idlePolls < 2) return;
   d.seenPlaying = false; d.idlePolls = 0;
   d.clock.stop();
-  say(`Deck ${NAMES[d.i]}: stopped on the FM-1.`);
+  say(`Deck ${NAMES[d.i]}: stopped on the FM-1${stopWhy(d.live.stop)}.`);
   drawDeck(d);
 }
 /* while a deck plays, its colours are read less often: those reads queue ahead of its sends */

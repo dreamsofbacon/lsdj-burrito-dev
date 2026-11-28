@@ -146,7 +146,17 @@ assert.equal(resetCause({why: 'hang', p3: 0x40, rst: 0}).kind, 'hang', '0.9.98-d
     /* (0.9.98-dev.26: the stall rescue's counts, the last one's PC and ms after the speed test) */
     const f7 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), ...le(sp), ...le((7 | 3 << 10 | 2 << 20 | 1 << 26) >>> 0), ...le(0x0200B7A4), 31, 0]]);
     assert.deepEqual((await f7.link.live()).rescue, {hold: 7, touch: 3, self: 2, fail: 1, total: 13, pc: 0x0200B7A4, ms: 31}, 'LIVE (dev.26): the stall rescue');
-    assert.deepEqual((await f7.link.live()).speed, want, 'LIVE (dev.26): the speed test still read'); }
+    assert.deepEqual((await f7.link.live()).speed, want, 'LIVE (dev.26): the speed test still read');
+    assert.equal((await f7.link.live()).stop, null, 'dev.26/27: no stop reason');
+    /* (0.9.98-dev.28: why LSDj last stopped, ms since, the clock at the stop and its longest gap) */
+    const tail = [...le(sp), ...le((7 | 3 << 10 | 2 << 20 | 1 << 26) >>> 0), ...le(0x0200B7A4), 31, 0];
+    const f8 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), ...tail, 1, ...le(850), 0xB8, 0x0B, 0xD2, 0x04]]);
+    assert.deepEqual((await f8.link.live()).stop, {why: 'quiet', agoMs: 850, gapMs: 3000, gapMaxMs: 1234}, 'LIVE (dev.28): a quiet clock');
+    const f9 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), ...tail, 4, ...le(20), 0xFF, 0xFF, 0xFF, 0xFF]]);
+    assert.deepEqual((await f9.link.live()).stop, {why: 'lsdj', agoMs: 20, gapMs: null, gapMaxMs: null}, 'LSDj itself, no clock');
+    const f10 = fake(() => [0, [...head, ...fx(17), 0x03, ...Array(19).fill(0xFF), ...tail, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]]);
+    assert.equal((await f10.link.live()).stop, null, 'not stopped since power on');
+    assert.equal((await f8.link.live()).rescue.total, 13, 'the rescue still read'); }
   w[1] = 3; const f2 = fake(() => [0, [1, ...w.flatMap(le)]]);
   assert.equal((await f2.link.restartInfo()).crash.load, null, 'a crash: psr and the ETM trace are its own'); }
 assert.match(resetCause({why: null, p3: 0x02, rst: 0x1}).text, /brown-out.*VDDIO low \(P3_RST_SRC 0x02, RST_SRC 0x1\)/);
