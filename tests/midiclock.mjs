@@ -65,7 +65,7 @@ assert.ok(near(clockMs(120), 500 / PPQN));   /* 24 a beat: 20.83 ms at 120 */
   c.close();
 }
 
-/* targets: added later join at the next clock; one that throws is dropped; untimed ones get each message when due */
+/* targets: added later join at the next clock; one that throws is skipped, not dropped; untimed ones get each message when due */
 {
   const f = fake(), a = out(), late = out(), v = out(), bad = {send() { throw Error('port closed'); }};
   const c = startClock({bpm: 120, targets: [a, bad], now: f.now, timer: f.timer});
@@ -82,6 +82,25 @@ assert.ok(near(clockMs(120), 500 / PPQN));   /* 24 a beat: 20.83 ms at 120 */
   c.removeTarget(a); const n = a.log.length; f.run(100); assert.equal(a.log.length, n);
   c.stop(); assert.deepEqual(v.log.at(-1), [STOP, undefined]);
   const m = v.log.length; f.run(300); assert.equal(v.log.length, m);   /* scheduled clocks after Stop never reach it */
+  c.close();
+}
+
+/* a port that closes for a moment (another FM-1 restarting renumbers the ports on Windows) gets the clock again once it
+   opens: it was dropped for good, and its FM-1 stopped while the deck showed it playing (2026-11-27) */
+{
+  const f = fake(), log = [];
+  let closed = false;
+  const blink = {send(d, ts) { if (closed) throw Error('InvalidStateError: port disconnected'); log.push([d[0], ts]); }};
+  const v = out(); let vClosed = false;
+  const vBlink = {send(d) { if (vClosed) throw Error('gone'); v.send(d); }};
+  const c = startClock({bpm: 120, targets: [blink], now: f.now, timer: f.timer});
+  c.addTarget(vBlink, {timed: false});
+  c.start(); f.run(300);
+  const n = log.length, m = v.log.length; assert.ok(n > 5 && m > 5);
+  closed = vClosed = true; f.run(500); assert.equal(log.length, n); assert.equal(v.log.length, m);
+  closed = vClosed = false; f.run(300);
+  assert.ok(log.length > n + 5 && log.slice(n).every(([x]) => x === CLOCK), 'clocks again after the port came back');
+  assert.ok(v.log.length > m + 5, 'the untimed one too');
   c.close();
 }
 

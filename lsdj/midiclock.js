@@ -32,15 +32,19 @@ export function workerTimer(f, ms, {Worker: W = globalThis.Worker, Blob: B = glo
   return () => clearInterval(id);
 }
 
-/* targets: Map target -> {timed}. ts undefined: now, to all; else only the timed ones, scheduled at ts. */
+/* targets: Map target -> {timed}. ts undefined: now, to all; else only the timed ones, scheduled at ts.
+   A send that throws (the port closed for a moment) skips that one message only: the target stays, and gets the next
+   clock. It was dropped for good before, so an FM-1 whose port blinked (Windows renumbers the MIDI ports when another
+   FM-1 restarts, as after an install from the DJ crate) never had a clock again and stopped, while its deck showed it
+   playing (Colin, 2026-11-27). Only removeTarget / close let one go. */
 function sendAll(targets, data, ts) {
-  for (const [t, o] of [...targets]) {
+  for (const [t, o] of targets) {
     if (ts !== undefined && !o.timed) continue;
-    try { if (ts === undefined) t.send(data); else t.send(data, ts); } catch { targets.delete(t); }
+    try { if (ts === undefined) t.send(data); else t.send(data, ts); } catch { /* next clock */ }
   }
 }
 function sendUntimed(targets, data) {
-  for (const [t, o] of [...targets]) { if (o.timed) continue; try { t.send(data); } catch { targets.delete(t); } }
+  for (const [t, o] of targets) { if (o.timed) continue; try { t.send(data); } catch { /* next clock */ } }
 }
 const asMap = targets => new Map([...targets].map(t => [t, {timed: true}]));
 
