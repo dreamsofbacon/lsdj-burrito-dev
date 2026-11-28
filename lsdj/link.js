@@ -97,6 +97,7 @@ export class Link {
         this.onDjKey?.(m[6] === 0 ? 'play' : 'stop'); return;
       }
       const r = parse(Array.from(m));
+      if (r && r.op === OP.CHUNK && r.tag !== undefined && this.chunkAck) { this.chunkAck(r); return; }   /* sendChunks */
       if (r && r.op === OP.LIVE && r.tag === undefined && this.liveLate && this.waiting?.op !== OP.LIVE) { this.liveLate = 0; return; }   /* the late one */
       if (r && this.waiting && r.op === this.waiting.op && r.tag === this.waiting.tag && (r.status || this.waiting.accept(r))) {
         const w = this.waiting; w.resolve(r);
@@ -269,7 +270,8 @@ export class Link {
     const b = await this.req(OP.BEGIN, [...le32(SAVE_SIZE), ...le32(crc)], {timeout: 20000, retries: 1, allow: [0, 2]});
     if (b.status === 2 && b.tries === 1) throw new LinkError('FM-1: wrong state (an import is already running)');
     try {
-      for (let off = 0; off < SAVE_SIZE; off += CHUNK) {   // a chunk sent again is fine (the firmware takes the last one twice)
+      if (this.tagged && this.output) await this.sendChunks(bytes, progress);
+      else for (let off = 0; off < SAVE_SIZE; off += CHUNK) {   // a chunk sent again is fine (the firmware takes the last one twice)
         await this.req(OP.CHUNK, [...le32(off), ...bytes.slice(off, off + CHUNK)], {retries: 4});
         progress(off + CHUNK, SAVE_SIZE);
       }
@@ -286,6 +288,78 @@ export class Link {
       await this.req(OP.ABORT, [], {retries: 2}).catch(() => {});
       throw e;
     }
+  }
+  /* A save's 1024 CHUNKs, several on the way at once (Colin, 2026-11-27: "why does sending a sav take so long?";
+     one at a time, each waited for its reply, the time was all round trips through Web MIDI and Windows' USB MIDI).
+     Tagged firmware only (each reply says which request it answers). The FM-1 holds one incoming SysEx at a time
+     (felucca usb.c sx_frame): one that comes in before the last is handled is dropped. That is safe: the firmware
+     takes CHUNKs in order only (BAD for any other offset, nothing changed), and the last one again is fine. So the
+     window grows while every reply is OK, halves at a loss, and the send goes back to the first chunk not yet
+     answered (go-back-N). BAD replies to chunks sent before that go-back are old news, ignored. One job on the queue:
+     nothing else goes to this FM-1 meanwhile. The connection Log says how long it took and the chunks sent again. */
+  sendChunks(bytes, progress = () => {}) {
+    const run = () => new Promise((resolve, reject) => {
+      const t0 = Date.now(), tags = new Map();   /* tag -> {off, epoch}: every chunk sent and not yet answered */
+      let base = 0, at = 0, win = 4, epoch = 0, out = 0, sent = 0, losses = 0, last = Date.now(), moved = last, timer = null, rtt = 100, cap = 64, over = false;
+      const done = e => {
+        if (over) return; over = true; clearInterval(timer); this.chunkAck = null;
+        if (e) return reject(e);
+        logEvent(`Songs sent in ${((Date.now() - t0) / 1000).toFixed(1)} s (${sent - SAVE_SIZE / CHUNK} pieces sent again, ${losses} losses, window up to ${Math.floor(this.chunkWinMax)}).`);
+        resolve();
+      };
+      /* back to the first chunk not answered. Chunks sent before stay in tags: an OK from one still moves base on */
+      const rewind = () => {
+        epoch++; out = 0; at = base; win = Math.max(1, win / 2); last = Date.now();
+        if (losses >= 16 && losses * 4 > base / CHUNK) cap = win = 1;   /* lost too often: one at a time, as before */
+        if (++losses > 4000) done(new LinkError('Too many pieces lost on the way to the FM-1.'));
+      };
+      const fill = () => {
+        if (over) return;
+        if (this.closed) return done(new LinkError('Disconnected from the FM-1.'));
+        while (at < SAVE_SIZE && out < Math.floor(win)) {
+          const tag = this.tag = (this.tag + 1) & 127, off = at;
+          tags.set(tag, {off, epoch, t: Date.now()});
+          at += CHUNK; sent++; out++;   /* (before the send: a simulated FM-1 may answer inside it) */
+          try { this.output.send(frame(OP.CHUNK, [...le32(off), ...bytes.subarray(off, off + CHUNK)], tag)); }
+          catch (e) { return done(e); }
+        }
+      };
+      this.chunkWinMax = win;
+      this.chunkAck = r => {
+        const q = tags.get(r.tag);
+        if (!q) return;
+        tags.delete(r.tag);
+        if (q.epoch === epoch) out--;
+        if (r.status === 0) {
+          if (q.off + CHUNK > base) {
+            base = q.off + CHUNK; last = moved = Date.now(); rtt += (last - q.t - rtt) / 8;
+            win = Math.min(cap, win + 1 / win); this.chunkWinMax = Math.max(this.chunkWinMax, win);
+            progress(base, SAVE_SIZE);
+          }
+          if (base >= SAVE_SIZE) return done();
+          if (at < base) { at = base; epoch++; out = 0; }   /* (an OK from before a go-back: ahead of it) */
+        } else if (r.status === 1) {
+          /* BAD for base itself: the FM-1 is past base + 1 chunk (it takes base, or base's last chunk again), so base
+             was stored and its OK lost; step on. Any other BAD: a chunk lost before it, go back (once per go-back) */
+          if (q.off === base) { base += CHUNK; moved = Date.now(); progress(base, SAVE_SIZE); rewind(); }
+          else if (q.epoch === epoch) rewind();
+        } else return done(new LinkError(`FM-1: ${STATUS[r.status] || 'error ' + r.status}`));
+        fill();
+      };
+      /* nothing back for a while (4 round trips, 60..400 ms): a request or its reply lost (the last ones have no later
+         chunk to show it). Too soon is harmless: the chunks again, BAD for those the FM-1 has. No progress for 4 s: given
+         up (the FM-1 gives up an import after 5 s of nothing) */
+      timer = setInterval(() => {
+        if (Date.now() - last < Math.min(400, Math.max(60, 4 * rtt + 20))) return;
+        if (Date.now() - moved > 4000) return done(new LinkError('The FM-1 did not answer. Is LSDJ Burrito running and the cable connected?', {cause: 'timeout'}));
+        rewind(); fill();
+      }, 20);
+      fill();
+    });
+    return new Promise((resolve, reject) => {
+      this.jobs.push({run, resolve, reject, urgent: false});
+      this.pump();
+    });
   }
   // (gets and sets are safe to send again: a set writes the same value twice)
   async settingsGet() { return rd32((await this.req(OP.SETTINGS_GET, [], {retries: 2})).data, 0); }
